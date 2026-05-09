@@ -7,7 +7,7 @@ Pulumi stacks that provision the AWS infrastructure for [ord-app](https://github
 | Project | Purpose |
 | --- | --- |
 | [domain/](domain/) | Route 53 hosted zone and ACM certificates |
-| [backend/](backend/) | VPC, RDS Aurora, Redis |
+| [backend/](backend/) | VPC, RDS Aurora, Redis, bastion ([README](backend/README.md)) |
 | [app/](app/) | ECS service, ALB, task definitions for ord-app |
 | [interface/](interface/) | CloudFront / public-facing edge config |
 
