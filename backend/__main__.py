@@ -197,32 +197,20 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
-ord_bucket = aws.s3.Bucket(
-    "ord_bucket",
-    bucket="open-reaction-database",
-    opts=pulumi.ResourceOptions(protect=True),
-)
-aws.s3.BucketVersioning(
-    "ord_bucket_versioning",
-    bucket=ord_bucket.id,
-    versioning_configuration={"status": "Enabled"},
-)
-aws.s3.BucketPublicAccessBlock(
-    "ord_bucket_public_access_block",
-    bucket=ord_bucket.id,
+# Block public access at the account level so every bucket in the account inherits the guardrail.
+aws.s3.AccountPublicAccessBlock(
+    "account_public_access_block",
+    account_id=aws.get_caller_identity().account_id,
     block_public_acls=True,
     block_public_policy=True,
     ignore_public_acls=True,
     restrict_public_buckets=True,
 )
-aws.s3.BucketServerSideEncryptionConfiguration(
-    "ord_bucket_encryption",
-    bucket=ord_bucket.id,
-    rules=[
-        {
-            "apply_server_side_encryption_by_default": {"sse_algorithm": "AES256"},
-        },
-    ],
+
+aws.s3.Bucket(
+    "ord_bucket",
+    bucket="open-reaction-database",
+    opts=pulumi.ResourceOptions(protect=True),
 )
 
 pulumi.export("vpc_id", vpc.vpc_id)
