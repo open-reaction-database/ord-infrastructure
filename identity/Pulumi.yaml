@@ -16,5 +16,3 @@ name: identity
 description: IAM users, roles, policies, and AWS Identity Center (SSO) permission sets and assignments.
 runtime:
   name: python
-  options:
-    virtualenv: venv
