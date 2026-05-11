@@ -14,11 +14,11 @@
 
 """An AWS Python Pulumi program."""
 
-import json
-
 import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
+
+from ord_infrastructure.shared import assert_sibling_clean, make_ecs_execution_role
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -70,12 +70,13 @@ repository = awsx.ecr.Repository(
     awsx.ecr.RepositoryArgs(force_delete=True),
 )
 
+assert_sibling_clean("../../../ord-app")
 image = awsx.ecr.Image(
     "image",
     awsx.ecr.ImageArgs(
         repository_url=repository.url,
-        context="../../ord-app",
-        dockerfile="../../ord-app/Dockerfile.single",
+        context="../../../ord-app",
+        dockerfile="../../../ord-app/Dockerfile.single",
         platform="linux/amd64",
     ),
 )
@@ -104,49 +105,7 @@ security_group = aws.ec2.SecurityGroup(
 
 cluster = aws.ecs.Cluster("cluster")
 
-# Execution role: ECR pulls + CloudWatch Logs + read the rds_dsn secret ECS injects at container start.
-execution_role = aws.iam.Role(
-    "execution_role",
-    assume_role_policy=json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-                    "Action": "sts:AssumeRole",
-                },
-            ],
-        }
-    ),
-)
-aws.iam.RolePolicyAttachment(
-    "execution_role_task_execution",
-    role=execution_role.name,
-    policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
-)
-
-
-def _secrets_policy(arn: str) -> str:
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": "secretsmanager:GetSecretValue",
-                    "Resource": arn,
-                },
-            ],
-        }
-    )
-
-
-aws.iam.RolePolicy(
-    "execution_role_secrets",
-    role=execution_role.id,
-    policy=backend.get_output("rds_dsn_secret_arn").apply(_secrets_policy),  # ty: ignore[missing-argument, invalid-argument-type]
-)
+execution_role = make_ecs_execution_role("execution_role", [backend.get_output("rds_dsn_secret_arn")])
 
 service = awsx.ecs.FargateService(
     "service",

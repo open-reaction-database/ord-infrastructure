@@ -249,12 +249,16 @@ wheels = [
 [[package]]
 name = "ord-infrastructure"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "pulumi" },
     { name = "pulumi-aws" },
     { name = "pulumi-awsx" },
     { name = "pulumi-random" },
+]
+
+[package.dev-dependencies]
+dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -265,6 +269,10 @@ requires-dist = [
     { name = "pulumi-aws", specifier = ">=7.0.0,<8.0.0" },
     { name = "pulumi-awsx", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-random", specifier = ">=4.0.0,<5.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "ruff", specifier = ">=0.9.9" },
     { name = "ty", specifier = ">=0.0.28" },
 ]

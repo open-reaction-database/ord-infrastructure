@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "ord-infrastructure"
 version = "0.1.0"
@@ -22,12 +26,18 @@ dependencies = [
     "pulumi-aws>=7.0.0,<8.0.0",
     "pulumi-awsx>=3.0.0,<4.0.0",
     "pulumi-random>=4.0.0,<5.0.0",
+]
+
+[dependency-groups]
+dev = [
     "ruff>=0.9.9",
     "ty>=0.0.28",
 ]
 
-[tool.uv]
-package = false
+[tool.hatch.build.targets.wheel]
+# Pulumi projects install this package via `-e ../..` in their requirements.txt
+# to get `from ord_infrastructure.shared import …`.
+packages = ["ord_infrastructure"]
 
 [tool.ruff]
 line-length = 120
@@ -49,6 +59,12 @@ ignore = [
     "SIM108",  # Ternary expressions are not always clearer than if/else.
     "B008",    # Function calls in argument defaults are fine for our use cases.
 ]
+
+[tool.ruff.lint.isort]
+# `pulumi` is a third-party namespace package. Without this, ruff's heuristic
+# classifies it as first-party from inside ord_infrastructure/ and splits it
+# from `pulumi_aws` / `pulumi_awsx` / `pulumi_random`.
+known-third-party = ["pulumi"]
 
 [tool.ty.src]
 exclude = ["**/venv/**"]
