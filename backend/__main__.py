@@ -200,6 +200,7 @@ bastion = aws.ec2.Instance(
 ord_bucket = aws.s3.Bucket(
     "ord_bucket",
     bucket="open-reaction-database",
+    opts=pulumi.ResourceOptions(protect=True),
 )
 aws.s3.BucketVersioning(
     "ord_bucket_versioning",
