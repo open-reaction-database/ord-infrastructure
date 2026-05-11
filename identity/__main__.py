@@ -87,22 +87,10 @@ org_account_access_role = aws.iam.Role(
     opts=PROTECT,
 )
 
-org_account_access_role_inline = aws.iam.RolePolicy(
-    "org_account_access_role_inline",
-    name="AdministratorAccess",
-    policy=json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": "*",
-                    "Resource": "*",
-                },
-            ],
-        }
-    ),
+org_account_access_role_admin = aws.iam.RolePolicyAttachment(
+    "org_account_access_role_admin",
     role="OrganizationAccountAccessRole",
+    policy_arn="arn:aws:iam::aws:policy/AdministratorAccess",
     opts=PROTECT,
 )
 
