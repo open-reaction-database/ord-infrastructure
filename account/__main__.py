@@ -21,24 +21,24 @@ import pulumi_aws as aws
 
 PROTECT = pulumi.ResourceOptions(protect=True)
 
-ACCOUNT_ID = "482491871729"
-
-# Block public access at the account level so every bucket in the account inherits the guardrail.
-aws.s3.AccountPublicAccessBlock(
-    "account_public_access_block",
-    account_id=ACCOUNT_ID,
-    block_public_acls=True,
-    block_public_policy=True,
-    ignore_public_acls=True,
-    restrict_public_buckets=True,
-    opts=PROTECT,
-)
+current = aws.get_caller_identity()
 SSO_INSTANCE_ARN = "arn:aws:sso:::instance/ssoins-7223f32c906c0e43"
 IDENTITY_STORE_ID = "d-9067e48f13"
 ADMIN_PERMISSION_SET_ARN = "arn:aws:sso:::permissionSet/ssoins-7223f32c906c0e43/ps-b3926ef4b0a5a823"
 ADMIN_GROUP_ID = "e41874c8-4001-7040-95a9-752f12a811e4"
 SKEARNES_SSO_USER_ID = "c49804b8-60c1-704d-2101-d67a4f3f1a04"
 ORG_MANAGEMENT_ACCOUNT_ID = "817965877148"
+
+# Block public access at the account level so every bucket in the account inherits the guardrail.
+aws.s3.AccountPublicAccessBlock(
+    "account_public_access_block",
+    account_id=current.account_id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+    opts=PROTECT,
+)
 
 
 billing_group = aws.iam.Group(
@@ -85,7 +85,7 @@ admin_account_assignment = aws.ssoadmin.AccountAssignment(
     permission_set_arn=ADMIN_PERMISSION_SET_ARN,
     principal_id=ADMIN_GROUP_ID,
     principal_type="GROUP",
-    target_id=ACCOUNT_ID,
+    target_id=current.account_id,
     target_type="AWS_ACCOUNT",
     opts=PROTECT,
 )
