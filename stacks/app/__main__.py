@@ -14,10 +14,10 @@
 
 """An AWS Python Pulumi program."""
 
+import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 
-import pulumi
 from ord_infrastructure.shared import assert_sibling_clean, make_ecs_execution_role
 
 backend = pulumi.StackReference("ord/backend/prod")

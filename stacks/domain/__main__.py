@@ -18,9 +18,8 @@ import json
 from collections.abc import Sequence
 from functools import partial
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 backend = pulumi.StackReference("ord/backend/prod")
 
