@@ -138,6 +138,16 @@ aws.route53.Record(
     zone_id=zone.zone_id,
 )
 
+# Documentation site hosted on Read the Docs.
+aws.route53.Record(
+    "docs_record",
+    name=f"docs.{DOMAIN}",
+    records=["readthedocs.io"],
+    ttl=300,
+    type=aws.route53.RecordType.CNAME,
+    zone_id=zone.zone_id,
+)
+
 pulumi.export("certificate_arn", certificate_validation.certificate_arn)
 pulumi.export("wildcard_certificate_arn", wildcard_certificate_validation.certificate_arn)
 pulumi.export("domain_name", DOMAIN)

@@ -197,6 +197,23 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
+# Block public access at the account level so every bucket in the account inherits the guardrail.
+aws.s3.AccountPublicAccessBlock(
+    "account_public_access_block",
+    account_id=aws.get_caller_identity().account_id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
+aws.s3.Bucket(
+    "ord_bucket",
+    bucket="open-reaction-database",
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
