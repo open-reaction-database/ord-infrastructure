@@ -197,6 +197,36 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
+ord_bucket = aws.s3.Bucket(
+    "ord_bucket",
+    bucket="open-reaction-database",
+)
+aws.s3.BucketVersioning(
+    "ord_bucket_versioning",
+    bucket=ord_bucket.id,
+    versioning_configuration={"status": "Enabled"},
+)
+aws.s3.BucketPublicAccessBlock(
+    "ord_bucket_public_access_block",
+    bucket=ord_bucket.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+aws.s3.BucketServerSideEncryptionConfiguration(
+    "ord_bucket_encryption",
+    bucket=ord_bucket.id,
+    rules=[
+        {
+            "apply_server_side_encryption_by_default": {"sse_algorithm": "AES256"},
+            "bucket_key_enabled": True,
+        },
+    ],
+)
+
+github_client_secret = aws.secretsmanager.Secret("github_client_secret", name="github-client")
+
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
