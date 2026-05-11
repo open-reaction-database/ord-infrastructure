@@ -226,8 +226,6 @@ aws.s3.BucketServerSideEncryptionConfiguration(
     ],
 )
 
-github_client_secret = aws.secretsmanager.Secret("github_client_secret", name="github-client")
-
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
