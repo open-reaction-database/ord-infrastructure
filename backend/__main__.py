@@ -21,7 +21,6 @@ import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pulumi_random as random
 
-
 vpc = awsx.ec2.Vpc(
     "vpc",
     awsx.ec2.VpcArgs(
@@ -193,7 +192,7 @@ bastion = aws.ec2.Instance(
     ami=bastion_ami_id,
     instance_type="t4g.nano",
     iam_instance_profile=bastion_instance_profile.name,
-    subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),
+    subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
     vpc_security_group_ids=[bastion_security_group.id],
     tags={"Name": "bastion"},
 )
@@ -204,5 +203,5 @@ pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 pulumi.export("rds_endpoint", cluster.endpoint)
 pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
-pulumi.export("redis_endpoint", redis.endpoints.apply(lambda endpoints: endpoints[0]["address"]))
+pulumi.export("redis_endpoint", redis.endpoints.apply(lambda endpoints: endpoints[0]["address"]))  # ty: ignore[missing-argument, invalid-argument-type]
 pulumi.export("bastion_instance_id", bastion.id)
