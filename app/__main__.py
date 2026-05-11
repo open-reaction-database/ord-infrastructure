@@ -14,6 +14,8 @@
 
 """An AWS Python Pulumi program."""
 
+import json
+
 import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
@@ -102,6 +104,50 @@ security_group = aws.ec2.SecurityGroup(
 
 cluster = aws.ecs.Cluster("cluster")
 
+# Execution role: ECR pulls + CloudWatch Logs + read the rds_dsn secret ECS injects at container start.
+execution_role = aws.iam.Role(
+    "execution_role",
+    assume_role_policy=json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+                    "Action": "sts:AssumeRole",
+                },
+            ],
+        }
+    ),
+)
+aws.iam.RolePolicyAttachment(
+    "execution_role_task_execution",
+    role=execution_role.name,
+    policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+)
+
+
+def _secrets_policy(arn: str) -> str:
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "secretsmanager:GetSecretValue",
+                    "Resource": arn,
+                },
+            ],
+        }
+    )
+
+
+aws.iam.RolePolicy(
+    "execution_role_secrets",
+    role=execution_role.id,
+    policy=backend.get_output("rds_dsn_secret_arn").apply(_secrets_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+
 service = awsx.ecs.FargateService(
     "service",
     awsx.ecs.FargateServiceArgs(
@@ -116,6 +162,7 @@ service = awsx.ecs.FargateService(
             security_groups=[security_group.id],
         ),
         task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
+            execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(role_arn=execution_role.arn),
             container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                 name="container",
                 image=image.image_uri,
@@ -123,13 +170,10 @@ service = awsx.ecs.FargateService(
                 memory=8192,
                 essential=True,
                 port_mappings=[awsx.ecs.TaskDefinitionPortMappingArgs(container_port=5173, host_port=5173)],
-                # TODO(skearnes): Use `secrets` for PG_DSN; requires an updated execution role with secrets access.
-                environment=[
-                    awsx.ecs.TaskDefinitionKeyValuePairArgs(
+                secrets=[
+                    awsx.ecs.TaskDefinitionSecretArgs(
                         name="PG_DSN",
-                        value=aws.secretsmanager.get_secret_version_output(
-                            secret_id=backend.get_output("rds_dsn_secret_arn")
-                        ).secret_string,
+                        value_from=backend.get_output("rds_dsn_secret_arn"),
                     ),
                 ],
             ),
