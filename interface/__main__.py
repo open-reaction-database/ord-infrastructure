@@ -137,7 +137,7 @@ def _secrets_policy(arns: dict[str, str]) -> str:
                 {
                     "Effect": "Allow",
                     "Action": "secretsmanager:GetSecretValue",
-                    "Resource": list(arns.values()),
+                    "Resource": [arns["rds_password_arn"], arns["github_client_arn"]],
                 },
             ],
         }
