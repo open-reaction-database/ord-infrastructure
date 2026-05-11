@@ -205,6 +205,7 @@ aws.s3.AccountPublicAccessBlock(
     block_public_policy=True,
     ignore_public_acls=True,
     restrict_public_buckets=True,
+    opts=pulumi.ResourceOptions(protect=True),
 )
 
 aws.s3.Bucket(
