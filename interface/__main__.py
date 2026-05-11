@@ -104,9 +104,54 @@ security_group = aws.ec2.SecurityGroup(
 
 cluster = aws.ecs.Cluster("cluster")
 
-aws.secretsmanager.Secret("github_client_secret", name="github-client")
-# get_secret_version is a sync data source and can't take an Output[str], so we look up by name.
-github_client = json.loads(aws.secretsmanager.get_secret_version(secret_id="github-client").secret_string)
+github_client_secret = aws.secretsmanager.Secret("github_client_secret", name="github-client")
+
+# Execution role: ECR pulls + CloudWatch Logs + read the two secrets ECS injects at container start.
+execution_role = aws.iam.Role(
+    "execution_role",
+    assume_role_policy=json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+                    "Action": "sts:AssumeRole",
+                },
+            ],
+        }
+    ),
+)
+aws.iam.RolePolicyAttachment(
+    "execution_role_task_execution",
+    role=execution_role.name,
+    policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+)
+
+
+def _secrets_policy(arns: dict[str, str]) -> str:
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "secretsmanager:GetSecretValue",
+                    "Resource": [arns["rds_password_arn"], arns["github_client_arn"]],
+                },
+            ],
+        }
+    )
+
+
+aws.iam.RolePolicy(
+    "execution_role_secrets",
+    role=execution_role.id,
+    policy=pulumi.Output.all(
+        rds_password_arn=backend.get_output("rds_password_secret_arn"),
+        github_client_arn=github_client_secret.arn,
+    ).apply(_secrets_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
 
 service = awsx.ecs.FargateService(
     "service",
@@ -122,6 +167,7 @@ service = awsx.ecs.FargateService(
             security_groups=[security_group.id],
         ),
         task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
+            execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(role_arn=execution_role.arn),
             container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                 name="container",
                 image=image.image_uri,
@@ -129,27 +175,30 @@ service = awsx.ecs.FargateService(
                 memory=8192,
                 essential=True,
                 port_mappings=[awsx.ecs.TaskDefinitionPortMappingArgs(container_port=8080, host_port=8080)],
-                # TODO(skearnes): Use `secrets` as well; requires an updated execution role with secrets access.
                 environment=[
                     awsx.ecs.TaskDefinitionKeyValuePairArgs(
                         name="POSTGRES_HOST", value=backend.get_output("rds_endpoint")
                     ),
                     awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_USER", value="ord"),
-                    awsx.ecs.TaskDefinitionKeyValuePairArgs(
-                        name="POSTGRES_PASSWORD",
-                        value=aws.secretsmanager.get_secret_version_output(
-                            secret_id=backend.get_output("rds_password_secret_arn")
-                        ).secret_string,
-                    ),
                     awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_DATABASE", value="ord"),
-                    awsx.ecs.TaskDefinitionKeyValuePairArgs(name="GH_CLIENT_ID", value=github_client["GH_CLIENT_ID"]),
-                    awsx.ecs.TaskDefinitionKeyValuePairArgs(
-                        name="GH_CLIENT_SECRET", value=github_client["GH_CLIENT_SECRET"]
-                    ),
                     awsx.ecs.TaskDefinitionKeyValuePairArgs(
                         name="REDIS_HOST", value=backend.get_output("redis_endpoint")
                     ),
                     awsx.ecs.TaskDefinitionKeyValuePairArgs(name="REDIS_SSL", value="1"),
+                ],
+                secrets=[
+                    awsx.ecs.TaskDefinitionSecretArgs(
+                        name="POSTGRES_PASSWORD",
+                        value_from=backend.get_output("rds_password_secret_arn"),
+                    ),
+                    awsx.ecs.TaskDefinitionSecretArgs(
+                        name="GH_CLIENT_ID",
+                        value_from=github_client_secret.arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::"),  # ty: ignore[missing-argument, invalid-argument-type]
+                    ),
+                    awsx.ecs.TaskDefinitionSecretArgs(
+                        name="GH_CLIENT_SECRET",
+                        value_from=github_client_secret.arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::"),  # ty: ignore[missing-argument, invalid-argument-type]
+                    ),
                 ],
             ),
         ),
