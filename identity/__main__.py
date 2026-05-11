@@ -30,25 +30,6 @@ SKEARNES_SSO_USER_ID = "c49804b8-60c1-704d-2101-d67a4f3f1a04"
 ORG_MANAGEMENT_ACCOUNT_ID = "817965877148"
 
 
-billing_full_access_policy = aws.iam.Policy(
-    "billing_full_access_policy",
-    name="BillingFullAccess",
-    policy=json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Sid": "VisualEditor0",
-                    "Effect": "Allow",
-                    "Action": "aws-portal:*",
-                    "Resource": "*",
-                },
-            ],
-        }
-    ),
-    opts=PROTECT,
-)
-
 billing_group = aws.iam.Group(
     "billing_group",
     name="BillingFullAccessGroup",
@@ -59,13 +40,6 @@ billing_group_billing_attach = aws.iam.GroupPolicyAttachment(
     "billing_group_billing_attach",
     group="BillingFullAccessGroup",
     policy_arn="arn:aws:iam::aws:policy/job-function/Billing",
-    opts=PROTECT,
-)
-
-billing_group_custom_attach = aws.iam.GroupPolicyAttachment(
-    "billing_group_custom_attach",
-    group="BillingFullAccessGroup",
-    policy_arn=f"arn:aws:iam::{ACCOUNT_ID}:policy/BillingFullAccess",
     opts=PROTECT,
 )
 
