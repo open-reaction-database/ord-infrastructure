@@ -14,11 +14,11 @@
 
 """An AWS Python Pulumi program."""
 
-import json
-
-import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
+
+import pulumi
+from ord_infrastructure.shared import assert_sibling_clean, make_ecs_execution_role
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -70,12 +70,13 @@ repository = awsx.ecr.Repository(
     awsx.ecr.RepositoryArgs(force_delete=True),
 )
 
+assert_sibling_clean("../../../ord-interface")
 image = awsx.ecr.Image(
     "image",
     awsx.ecr.ImageArgs(
         repository_url=repository.url,
-        context="../../ord-interface",
-        dockerfile="../../ord-interface/ord_interface/Dockerfile",
+        context="../../../ord-interface",
+        dockerfile="../../../ord-interface/ord_interface/Dockerfile",
         platform="linux/amd64",
     ),
 )
@@ -106,51 +107,9 @@ cluster = aws.ecs.Cluster("cluster")
 
 github_client_secret = aws.secretsmanager.Secret("github_client_secret", name="github-client")
 
-# Execution role: ECR pulls + CloudWatch Logs + read the two secrets ECS injects at container start.
-execution_role = aws.iam.Role(
+execution_role = make_ecs_execution_role(
     "execution_role",
-    assume_role_policy=json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-                    "Action": "sts:AssumeRole",
-                },
-            ],
-        }
-    ),
-)
-aws.iam.RolePolicyAttachment(
-    "execution_role_task_execution",
-    role=execution_role.name,
-    policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
-)
-
-
-def _secrets_policy(arns: dict[str, str]) -> str:
-    return json.dumps(
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": "secretsmanager:GetSecretValue",
-                    "Resource": [arns["rds_password_arn"], arns["github_client_arn"]],
-                },
-            ],
-        }
-    )
-
-
-aws.iam.RolePolicy(
-    "execution_role_secrets",
-    role=execution_role.id,
-    policy=pulumi.Output.all(
-        rds_password_arn=backend.get_output("rds_password_secret_arn"),
-        github_client_arn=github_client_secret.arn,
-    ).apply(_secrets_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+    [backend.get_output("rds_password_secret_arn"), github_client_secret.arn],
 )
 
 service = awsx.ecs.FargateService(

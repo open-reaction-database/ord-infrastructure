@@ -16,8 +16,9 @@
 
 import json
 
-import pulumi
 import pulumi_aws as aws
+
+import pulumi
 
 PROTECT = pulumi.ResourceOptions(protect=True)
 

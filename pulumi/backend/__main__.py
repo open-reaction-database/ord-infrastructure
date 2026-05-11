@@ -16,10 +16,11 @@
 
 import json
 
-import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pulumi_random as random
+
+import pulumi
 
 vpc = awsx.ec2.Vpc(
     "vpc",
