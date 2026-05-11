@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: identity
-description: IAM users, roles, policies, and AWS Identity Center (SSO) permission sets and assignments.
+name: account
+description: Account-scoped resources — IAM users/roles/policies, AWS Identity Center (SSO), and account-level controls like S3 Block Public Access.
 runtime:
   name: python
   options:

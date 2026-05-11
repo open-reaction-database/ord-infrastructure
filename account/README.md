@@ -1,12 +1,13 @@
-# identity
+# account
 
-Pulumi stack for IAM, IAM Identity Center (SSO), and the cross-account `OrganizationAccountAccessRole`. Holds the access path you use to manage everything else — accidental deletion would lock you out.
+Pulumi stack for account-scoped resources: IAM, IAM Identity Center (SSO), the cross-account `OrganizationAccountAccessRole`, and account-level S3 controls. Holds the access path you use to manage everything else — accidental deletion would lock you out.
 
 ## What's in here
 
 - **SSO admin path**: permission set `AdministratorAccess`, `admin` group in the built-in identity store, account assignment binding the group to the permission set, your SSO user, and your membership in `admin`.
 - **`OrganizationAccountAccessRole`** with the managed `AdministratorAccess` policy attached — used by the AWS Organizations management account to administer this member account.
 - **Billing access** for `bdeadman`: IAM user, group membership in `BillingFullAccessGroup`, and the `IAMUserChangePassword` attachment so the user can rotate their own password.
+- **Account-level S3 Block Public Access** with all four flags `true`, blocking public exposure for every present and future bucket in the account.
 
 ## `PROTECT`
 
