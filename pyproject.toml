@@ -22,7 +22,8 @@ dependencies = [
     "pulumi-aws>=7.0.0,<8.0.0",
     "pulumi-awsx>=3.0.0,<4.0.0",
     "pulumi-random>=4.0.0,<5.0.0",
-    "ty",
+    "ruff>=0.9.9",
+    "ty>=0.0.28",
 ]
 
 [tool.uv]
