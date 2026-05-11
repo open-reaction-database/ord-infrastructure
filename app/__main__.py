@@ -58,7 +58,7 @@ aws.route53.Record(
             zone_id=load_balancer.load_balancer.zone_id,
         )
     ],
-    name=domain.get_output("domain_name").apply(lambda name: f"app.{name}"),
+    name=domain.get_output("domain_name").apply(lambda name: f"app.{name}"),  # ty: ignore[missing-argument, invalid-argument-type]
     type=aws.route53.RecordType.A,
     zone_id=domain.get_output("zone_id"),
 )
