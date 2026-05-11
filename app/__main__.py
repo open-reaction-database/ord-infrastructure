@@ -72,8 +72,8 @@ image = awsx.ecr.Image(
     "image",
     awsx.ecr.ImageArgs(
         repository_url=repository.url,
-        context="../..",
-        dockerfile="../../Dockerfile.single",
+        context="../../ord-app",
+        dockerfile="../../ord-app/Dockerfile.single",
         platform="linux/amd64",
     ),
 )

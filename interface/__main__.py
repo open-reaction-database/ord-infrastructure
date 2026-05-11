@@ -74,8 +74,8 @@ image = awsx.ecr.Image(
     "image",
     awsx.ecr.ImageArgs(
         repository_url=repository.url,
-        context="../../../ord-interface",
-        dockerfile="../../../ord-interface/ord_interface/Dockerfile",
+        context="../../ord-interface",
+        dockerfile="../../ord-interface/ord_interface/Dockerfile",
         platform="linux/amd64",
     ),
 )
