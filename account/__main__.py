@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""IAM and AWS Identity Center (SSO) resources."""
+"""Account-scoped resources: IAM, AWS Identity Center (SSO), and S3 public-access controls."""
 
 import json
 
@@ -22,6 +22,17 @@ import pulumi_aws as aws
 PROTECT = pulumi.ResourceOptions(protect=True)
 
 ACCOUNT_ID = "482491871729"
+
+# Block public access at the account level so every bucket in the account inherits the guardrail.
+aws.s3.AccountPublicAccessBlock(
+    "account_public_access_block",
+    account_id=ACCOUNT_ID,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+    opts=PROTECT,
+)
 SSO_INSTANCE_ARN = "arn:aws:sso:::instance/ssoins-7223f32c906c0e43"
 IDENTITY_STORE_ID = "d-9067e48f13"
 ADMIN_PERMISSION_SET_ARN = "arn:aws:sso:::permissionSet/ssoins-7223f32c906c0e43/ps-b3926ef4b0a5a823"
