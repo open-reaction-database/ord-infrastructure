@@ -139,7 +139,7 @@ aws.route53.Record(
 )
 
 # Documentation site hosted on Read the Docs.
-docs_record = aws.route53.Record(
+aws.route53.Record(
     "docs_record",
     name=f"docs.{DOMAIN}",
     records=["readthedocs.io"],
