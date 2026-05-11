@@ -20,9 +20,8 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
-import pulumi_aws as aws
-
 import pulumi
+import pulumi_aws as aws
 
 
 def assert_sibling_clean(path: str, branch: str = "main") -> None:

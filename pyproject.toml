@@ -60,5 +60,11 @@ ignore = [
     "B008",    # Function calls in argument defaults are fine for our use cases.
 ]
 
+[tool.ruff.lint.isort]
+# `pulumi` is a third-party namespace package. Without this, ruff's heuristic
+# classifies it as first-party from inside ord_infrastructure/ and splits it
+# from `pulumi_aws` / `pulumi_awsx` / `pulumi_random`.
+known-third-party = ["pulumi"]
+
 [tool.ty.src]
 exclude = ["**/venv/**"]
