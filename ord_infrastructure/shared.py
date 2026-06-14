@@ -129,6 +129,7 @@ def make_web_service(
     secret_arns: Sequence[pulumi.Input[str]],
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
+    enforce_clean: bool = True,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -156,6 +157,9 @@ def make_web_service(
         environment: Plain environment variables for the container.
         secrets: Secrets injected into the container via the ECS `secrets` directive.
             See `secret_arns` — the two must be kept in sync.
+        enforce_clean: If True (default, for prod), require the sibling repo to be on
+            a clean `main` before building the image. Set False for staging so the
+            current working tree (any branch) can be deployed.
 
     Returns:
         The created FargateService.
@@ -207,7 +211,8 @@ def make_web_service(
         awsx.ecr.RepositoryArgs(force_delete=True),
     )
 
-    assert_sibling_clean(sibling_path)
+    if enforce_clean:
+        assert_sibling_clean(sibling_path)
     image = awsx.ecr.Image(
         "image",
         awsx.ecr.ImageArgs(
