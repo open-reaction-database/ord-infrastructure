@@ -77,7 +77,8 @@ maintenance_provider = postgresql.Provider(
 
 # Manage every application database. The pre-existing ones are imported and
 # protected so Pulumi adopts them in place without recreating (a replace would drop
-# the data); app_staging is created fresh.
+# the data); app_staging is created fresh. (They were adopted via `import_`, since
+# removed now that they're in state — see git history.)
 databases = {
     db: postgresql.Database(
         f"db_{db}",
@@ -89,7 +90,6 @@ databases = {
             # disposable test data, so leave it unprotected: retiring staging is
             # then just removing it here + `pulumi up`, with no unprotect step.
             protect=db in EXISTING_DATABASES,
-            import_=db if db in EXISTING_DATABASES else None,
         ),
     )
     for db in DATABASES
