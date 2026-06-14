@@ -22,6 +22,7 @@ from collections.abc import Sequence
 
 import pulumi
 import pulumi_aws as aws
+import pulumi_awsx as awsx
 
 
 def assert_sibling_clean(path: str, branch: str = "main") -> None:
@@ -114,3 +115,157 @@ def make_ecs_execution_role(
         policy=pulumi.Output.all(*secret_arns).apply(_policy_doc),  # ty: ignore[missing-argument, invalid-argument-type]
     )
     return role
+
+
+def make_web_service(
+    *,
+    backend: pulumi.StackReference,
+    domain: pulumi.StackReference,
+    container_port: int,
+    certificate_arn: pulumi.Input[str],
+    record_name: pulumi.Input[str],
+    sibling_path: str,
+    dockerfile: str,
+    secret_arns: Sequence[pulumi.Input[str]],
+    environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
+    secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
+) -> awsx.ecs.FargateService:
+    """Provision a public-facing ECS Fargate web service behind an ALB.
+
+    Builds the full stack shared by the `app` and `interface` projects: an HTTP→HTTPS
+    redirecting ALB, a Route 53 alias to it, an ECR image built from a sibling repo
+    (gated by `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
+
+    Resource names are fixed (e.g. "service", "load-balancer"), so call this at most
+    once per Pulumi project; the URNs stay stable across the two callers because each
+    runs in its own project.
+
+    Args:
+        backend: StackReference to `ord/backend/prod` (VPC, subnets).
+        domain: StackReference to `ord/domain/prod` (hosted zone).
+        container_port: Port the container listens on; also the ALB target/health port.
+        certificate_arn: ACM certificate ARN for the HTTPS listener.
+        record_name: Fully-resolved DNS name for the Route 53 alias record.
+        sibling_path: Relative path to the sibling repo to build the image from.
+        dockerfile: Relative path to the Dockerfile within that build context.
+        secret_arns: Secrets Manager ARNs the execution role may read.
+        environment: Plain environment variables for the container.
+        secrets: Secrets injected into the container via the ECS `secrets` directive.
+
+    Returns:
+        The created FargateService.
+    """
+    target_group = aws.lb.TargetGroup(
+        "target-group", port=container_port, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
+    )
+    load_balancer = awsx.lb.ApplicationLoadBalancer(
+        "load-balancer",
+        listeners=[
+            awsx.lb.ListenerArgs(
+                default_actions=[
+                    aws.lb.ListenerDefaultActionArgs(
+                        type="redirect",
+                        redirect=aws.lb.ListenerDefaultActionRedirectArgs(
+                            port="443", protocol="HTTPS", status_code="HTTP_301"
+                        ),
+                    )
+                ],
+                port=80,
+                protocol="HTTP",
+            ),
+            awsx.lb.ListenerArgs(
+                certificate_arn=certificate_arn,
+                default_actions=[aws.lb.ListenerDefaultActionArgs(type="forward", target_group_arn=target_group.arn)],
+                port=443,
+                protocol="HTTPS",
+            ),
+        ],
+        subnet_ids=backend.get_output("public_subnet_ids"),
+    )
+
+    aws.route53.Record(
+        "alias",
+        aliases=[
+            aws.route53.RecordAliasArgs(
+                evaluate_target_health=False,
+                name=load_balancer.load_balancer.dns_name,
+                zone_id=load_balancer.load_balancer.zone_id,
+            )
+        ],
+        name=record_name,
+        type=aws.route53.RecordType.A,
+        zone_id=domain.get_output("zone_id"),
+    )
+
+    repository = awsx.ecr.Repository(
+        "repository",
+        awsx.ecr.RepositoryArgs(force_delete=True),
+    )
+
+    assert_sibling_clean(sibling_path)
+    image = awsx.ecr.Image(
+        "image",
+        awsx.ecr.ImageArgs(
+            repository_url=repository.url,
+            context=sibling_path,
+            dockerfile=dockerfile,
+            platform="linux/amd64",
+        ),
+    )
+
+    security_group = aws.ec2.SecurityGroup(
+        "security_group",
+        egress=[
+            aws.ec2.SecurityGroupEgressArgs(
+                from_port=0,
+                to_port=0,
+                protocol="-1",
+                cidr_blocks=["0.0.0.0/0"],
+                ipv6_cidr_blocks=["::/0"],
+            )
+        ],
+        ingress=[
+            aws.ec2.SecurityGroupIngressArgs(
+                from_port=container_port,
+                to_port=container_port,
+                protocol="tcp",
+                cidr_blocks=[aws.ec2.get_vpc_output(id=backend.get_output("vpc_id")).cidr_block],
+            )
+        ],
+        vpc_id=backend.get_output("vpc_id"),
+    )
+
+    cluster = aws.ecs.Cluster("cluster")
+
+    execution_role = make_ecs_execution_role("execution_role", secret_arns)
+
+    return awsx.ecs.FargateService(
+        "service",
+        awsx.ecs.FargateServiceArgs(
+            cluster=cluster.arn,
+            load_balancers=[
+                aws.ecs.ServiceLoadBalancerArgs(
+                    container_name="container", container_port=container_port, target_group_arn=target_group.arn
+                )
+            ],
+            network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
+                subnets=backend.get_output("private_subnet_ids"),
+                security_groups=[security_group.id],
+            ),
+            task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
+                execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(role_arn=execution_role.arn),
+                container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
+                    name="container",
+                    image=image.image_uri,
+                    cpu=4096,
+                    memory=8192,
+                    essential=True,
+                    port_mappings=[
+                        awsx.ecs.TaskDefinitionPortMappingArgs(container_port=container_port, host_port=container_port)
+                    ],
+                    environment=environment,
+                    secrets=secrets,
+                ),
+            ),
+        ),
+    )

@@ -15,127 +15,26 @@
 """ECS Fargate service, ALB, and DNS for ord-app."""
 
 import pulumi
-import pulumi_aws as aws
 import pulumi_awsx as awsx
 
-from ord_infrastructure.shared import assert_sibling_clean, make_ecs_execution_role
+from ord_infrastructure.shared import make_web_service
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
 
-target_group = aws.lb.TargetGroup(
-    "target-group", port=5173, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
-)
-load_balancer = awsx.lb.ApplicationLoadBalancer(
-    "load-balancer",
-    listeners=[
-        awsx.lb.ListenerArgs(
-            default_actions=[
-                aws.lb.ListenerDefaultActionArgs(
-                    type="redirect",
-                    redirect=aws.lb.ListenerDefaultActionRedirectArgs(
-                        port="443", protocol="HTTPS", status_code="HTTP_301"
-                    ),
-                )
-            ],
-            port=80,
-            protocol="HTTP",
-        ),
-        awsx.lb.ListenerArgs(
-            certificate_arn=domain.get_output("wildcard_certificate_arn"),
-            default_actions=[aws.lb.ListenerDefaultActionArgs(type="forward", target_group_arn=target_group.arn)],
-            port=443,
-            protocol="HTTPS",
+make_web_service(
+    backend=backend,
+    domain=domain,
+    container_port=5173,
+    certificate_arn=domain.get_output("wildcard_certificate_arn"),
+    record_name=domain.get_output("domain_name").apply(lambda name: f"app.{name}"),  # ty: ignore[missing-argument, invalid-argument-type]
+    sibling_path="../../../ord-app",
+    dockerfile="../../../ord-app/Dockerfile.single",
+    secret_arns=[backend.get_output("rds_dsn_secret_arn")],
+    secrets=[
+        awsx.ecs.TaskDefinitionSecretArgs(
+            name="PG_DSN",
+            value_from=backend.get_output("rds_dsn_secret_arn"),
         ),
     ],
-    subnet_ids=backend.get_output("public_subnet_ids"),
-)
-
-aws.route53.Record(
-    "alias",
-    aliases=[
-        aws.route53.RecordAliasArgs(
-            evaluate_target_health=False,
-            name=load_balancer.load_balancer.dns_name,
-            zone_id=load_balancer.load_balancer.zone_id,
-        )
-    ],
-    name=domain.get_output("domain_name").apply(lambda name: f"app.{name}"),  # ty: ignore[missing-argument, invalid-argument-type]
-    type=aws.route53.RecordType.A,
-    zone_id=domain.get_output("zone_id"),
-)
-
-repository = awsx.ecr.Repository(
-    "repository",
-    awsx.ecr.RepositoryArgs(force_delete=True),
-)
-
-assert_sibling_clean("../../../ord-app")
-image = awsx.ecr.Image(
-    "image",
-    awsx.ecr.ImageArgs(
-        repository_url=repository.url,
-        context="../../../ord-app",
-        dockerfile="../../../ord-app/Dockerfile.single",
-        platform="linux/amd64",
-    ),
-)
-
-security_group = aws.ec2.SecurityGroup(
-    "security_group",
-    egress=[
-        aws.ec2.SecurityGroupEgressArgs(
-            from_port=0,
-            to_port=0,
-            protocol="-1",
-            cidr_blocks=["0.0.0.0/0"],
-            ipv6_cidr_blocks=["::/0"],
-        )
-    ],
-    ingress=[
-        aws.ec2.SecurityGroupIngressArgs(
-            from_port=5173,
-            to_port=5173,
-            protocol="tcp",
-            cidr_blocks=[aws.ec2.get_vpc_output(id=backend.get_output("vpc_id")).cidr_block],
-        )
-    ],
-    vpc_id=backend.get_output("vpc_id"),
-)
-
-cluster = aws.ecs.Cluster("cluster")
-
-execution_role = make_ecs_execution_role("execution_role", [backend.get_output("rds_dsn_secret_arn")])
-
-service = awsx.ecs.FargateService(
-    "service",
-    awsx.ecs.FargateServiceArgs(
-        cluster=cluster.arn,
-        load_balancers=[
-            aws.ecs.ServiceLoadBalancerArgs(
-                container_name="container", container_port=5173, target_group_arn=target_group.arn
-            )
-        ],
-        network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
-            subnets=backend.get_output("private_subnet_ids"),
-            security_groups=[security_group.id],
-        ),
-        task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
-            execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(role_arn=execution_role.arn),
-            container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
-                name="container",
-                image=image.image_uri,
-                cpu=4096,
-                memory=8192,
-                essential=True,
-                port_mappings=[awsx.ecs.TaskDefinitionPortMappingArgs(container_port=5173, host_port=5173)],
-                secrets=[
-                    awsx.ecs.TaskDefinitionSecretArgs(
-                        name="PG_DSN",
-                        value_from=backend.get_output("rds_dsn_secret_arn"),
-                    ),
-                ],
-            ),
-        ),
-    ),
 )
