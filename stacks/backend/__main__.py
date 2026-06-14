@@ -97,9 +97,10 @@ aws.secretsmanager.SecretVersion(
 )
 
 # Read-only credentials for database access (humans and automation alike). The
-# Postgres role `readonly` itself is created out-of-band via the bastion (see
-# backend/README.md); Pulumi owns the generated password and the secrets consumers
-# read. The master (read-write) credentials above are reserved for authorized writes.
+# `readonly` role and its grants are managed by the `database` stack (see
+# stacks/database/README.md); this stack owns the generated password and the
+# secrets consumers read. The master (read-write) credentials above are reserved
+# for authorized writes.
 readonly_password = random.RandomPassword(
     "readonly_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?"
 )
