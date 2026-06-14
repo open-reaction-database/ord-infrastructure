@@ -130,6 +130,7 @@ def make_web_service(
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
     enforce_clean: bool = True,
+    name_prefix: str | None = None,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -160,15 +161,34 @@ def make_web_service(
         enforce_clean: If True (default, for prod), require the sibling repo to be on
             a clean `main` before building the image. Set False for staging so the
             current working tree (any branch) can be deployed.
+        name_prefix: Explicit physical-name prefix for the ALB and target group
+            (alphanumeric + hyphens only — AWS forbids underscores in these names).
+            Required for any new environment; leave None for prod so its existing
+            auto-generated names are preserved.
 
     Returns:
         The created FargateService.
     """
     target_group = aws.lb.TargetGroup(
-        "target_group", port=container_port, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
+        "target_group",
+        name=f"{name_prefix}-tg" if name_prefix else None,
+        port=container_port,
+        protocol="HTTP",
+        target_type="ip",
+        vpc_id=backend.get_output("vpc_id"),
     )
     load_balancer = awsx.lb.ApplicationLoadBalancer(
         "load_balancer",
+        name=name_prefix,
+        # awsx always creates a default target group named after this component's
+        # logical name ("load_balancer" → an invalid underscore name on a fresh
+        # deploy). The listeners forward to `target_group`, so the default is unused
+        # — but it still needs a valid name. (prod keeps its existing one.)
+        default_target_group=(
+            awsx.lb.TargetGroupArgs(name=f"{name_prefix}-dtg", port=container_port, protocol="HTTP", target_type="ip")
+            if name_prefix
+            else None
+        ),
         listeners=[
             awsx.lb.ListenerArgs(
                 default_actions=[

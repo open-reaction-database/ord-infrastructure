@@ -32,6 +32,9 @@ database = config.get("database") or "app"
 enforce_clean = config.get_bool("enforce_clean")
 if enforce_clean is None:
     enforce_clean = True
+# Prod keeps its existing auto-generated ALB/target-group names (name_prefix=None);
+# new environments need an explicit prefix (AWS forbids underscores in those names).
+name_prefix = None if subdomain == "app" else subdomain
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -60,4 +63,5 @@ make_web_service(
         ),
     ],
     enforce_clean=enforce_clean,
+    name_prefix=name_prefix,
 )
