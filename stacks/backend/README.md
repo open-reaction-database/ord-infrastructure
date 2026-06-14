@@ -19,8 +19,8 @@ Make sure your AWS CLI credentials are configured for the account this stack is 
 ### Start the tunnel
 
 ```sh
-BASTION=$(pulumi -C backend stack output bastion_instance_id)
-RDS=$(pulumi -C backend stack output rds_endpoint)
+BASTION=$(pulumi -C stacks/backend stack output bastion_instance_id)
+RDS=$(pulumi -C stacks/backend stack output rds_endpoint)
 aws ssm start-session \
   --target "$BASTION" \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
@@ -41,7 +41,7 @@ In DataGrip (or any PostgreSQL client):
 
   ```sh
   aws secretsmanager get-secret-value \
-    --secret-id "$(pulumi -C backend stack output rds_password_secret_arn)" \
+    --secret-id "$(pulumi -C stacks/backend stack output rds_password_secret_arn)" \
     --query SecretString --output text
   ```
 
