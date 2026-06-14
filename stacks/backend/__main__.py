@@ -15,6 +15,7 @@
 """Shared backend infrastructure: VPC, RDS Aurora, Redis, and an SSM bastion."""
 
 import json
+from urllib.parse import quote
 
 import pulumi
 import pulumi_aws as aws
@@ -112,8 +113,12 @@ aws.secretsmanager.SecretVersion(
     "rds_ro_dsn_secret_version",
     aws.secretsmanager.SecretVersionArgs(
         secret_id=rds_ro_dsn_secret.id,
+        # Percent-encode the password: it's embedded in a URI, and the random
+        # special characters would otherwise corrupt parsing (e.g. `#`, `?`, `@`).
         secret_string=pulumi.Output.format(
-            "postgresql+psycopg://readonly:{0}@{1}:5432/app", readonly_password.result, cluster.endpoint
+            "postgresql+psycopg://readonly:{0}@{1}:5432/app",
+            readonly_password.result.apply(lambda pw: quote(pw, safe="")),
+            cluster.endpoint,
         ),
     ),
 )
