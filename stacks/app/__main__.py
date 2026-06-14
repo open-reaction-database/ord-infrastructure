@@ -69,4 +69,5 @@ make_web_service(
     name_prefix=name_prefix,
     cpu=cpu,
     memory=memory,
+    cluster_name=subdomain,  # "app" (prod) / "app-staging" — distinguishable in the console
 )
