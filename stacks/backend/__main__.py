@@ -47,6 +47,11 @@ cluster_subnet_group = aws.rds.SubnetGroup("cluster_subnet_group", subnet_ids=vp
 
 rds_password = random.RandomPassword("rds_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?")
 
+# Random suffix for the final snapshot name: stable in state (no per-run drift),
+# and regenerated if the cluster is ever recreated, so a second teardown can't
+# collide with a leftover snapshot from the first.
+final_snapshot_suffix = random.RandomId("final_snapshot_suffix", byte_length=4)
+
 cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
@@ -57,7 +62,12 @@ cluster = aws.rds.Cluster(
     engine_mode=aws.rds.EngineMode.PROVISIONED,
     master_username="ord",
     master_password=rds_password.result,
-    skip_final_snapshot=True,
+    # Hold the line against accidental teardown of the production database:
+    # deletion_protection blocks deletion at the AWS API, and a final snapshot is
+    # taken if the cluster is ever deleted anyway.
+    deletion_protection=True,
+    skip_final_snapshot=False,
+    final_snapshot_identifier=pulumi.Output.concat("cluster-final-snapshot-", final_snapshot_suffix.hex),
     storage_encrypted=True,
     serverlessv2_scaling_configuration=aws.rds.ClusterServerlessv2ScalingConfigurationArgs(
         min_capacity=0,
@@ -65,6 +75,8 @@ cluster = aws.rds.Cluster(
         seconds_until_auto_pause=3600,
     ),
     vpc_security_group_ids=[cluster_security_group.id],
+    # Pulumi-side guardrail: refuse to delete even if the resource is removed from code.
+    opts=pulumi.ResourceOptions(protect=True),
 )
 
 rds_password_secret = aws.secretsmanager.Secret("rds_password")
@@ -90,6 +102,7 @@ cluster_instance = aws.rds.ClusterInstance(
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
     engine_version=cluster.engine_version,
     instance_class="db.serverless",
+    opts=pulumi.ResourceOptions(protect=True),
 )
 
 redis_security_group = aws.ec2.SecurityGroup(
