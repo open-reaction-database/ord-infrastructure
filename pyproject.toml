@@ -23,6 +23,7 @@ description = "Pulumi infrastructure for the Open Reaction Database"
 requires-python = ">=3.11"
 dependencies = [
     "pulumi>=3.0.0,<4.0.0",
+    "pulumi-auth0>=3.0.0,<4.0.0",
     "pulumi-aws>=7.0.0,<8.0.0",
     "pulumi-awsx>=3.0.0,<4.0.0",
     "pulumi-postgresql>=3.0.0,<4.0.0",

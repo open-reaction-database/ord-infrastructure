@@ -252,6 +252,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "pulumi" },
+    { name = "pulumi-auth0" },
     { name = "pulumi-aws" },
     { name = "pulumi-awsx" },
     { name = "pulumi-postgresql" },
@@ -267,6 +268,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pulumi", specifier = ">=3.0.0,<4.0.0" },
+    { name = "pulumi-auth0", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-aws", specifier = ">=7.0.0,<8.0.0" },
     { name = "pulumi-awsx", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-postgresql", specifier = ">=3.0.0,<4.0.0" },
@@ -335,6 +337,20 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/00/8b5f66c0ac0aa530d657d3f4f6ad45b3a86af9f4ca3d236c4606582e0fd9/pulumi-3.237.0-py3-none-any.whl", hash = "sha256:23a1f1e2cca3b1eeaa592b1494826dc7761eb641a559a67394c7698d79928991", size = 404625, upload-time = "2026-05-08T20:52:53.89Z" },
+]
+
+[[package]]
+name = "pulumi-auth0"
+version = "3.45.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/81/1abe454ace2e07b22029d26e0497aac3319b6c9d41479b19b4a67f52b719/pulumi_auth0-3.45.0.tar.gz", hash = "sha256:1cdf9874fc857d0dbfda772b4eaa255d0912da52f3d9aeac698855bcaa5f09a0", size = 428695, upload-time = "2026-06-01T05:43:06.157Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/59/9b23c2cac98c6f699396f941ea3001f69a161b3e015dc8ddc0cb78fb29ac/pulumi_auth0-3.45.0-py3-none-any.whl", hash = "sha256:94dd3f79c98675e12a03433cd4dbc867d7cba9ceefc5c22a373c40bf45778b78", size = 570573, upload-time = "2026-06-01T05:43:04.104Z" },
 ]
 
 [[package]]
