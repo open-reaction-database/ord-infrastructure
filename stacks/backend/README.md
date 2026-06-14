@@ -53,3 +53,28 @@ The bastion runs 24/7 at roughly $3/mo. To pause it when you're not using it:
 aws ec2 stop-instances --instance-ids "$BASTION"
 aws ec2 start-instances --instance-ids "$BASTION"
 ```
+
+## Dev VM (loading datasets into the ORM)
+
+A `t3.xlarge` Ubuntu 24.04 instance (`dev-vm`) for loading datasets into the
+database. It has a 50 GB gp3 root volume (grow it later if needed — no replace),
+no public IP, and an instance role that can read the RDS credential secrets. SSH reaches it through an EC2 Instance
+Connect Endpoint (IAM-gated — no SSH keys or open ports).
+
+**It is meant to stay stopped.** AWS can't launch an instance pre-stopped, so it
+comes up running on the first `pulumi up`; stop it once and Pulumi leaves it
+alone (the provider doesn't manage power state). Turn it on only when you need
+it.
+
+```sh
+DEV_VM=$(pulumi -C stacks/backend stack output dev_vm_instance_id)
+
+aws ec2 start-instances --instance-ids "$DEV_VM"   # before a session
+aws ec2 stop-instances  --instance-ids "$DEV_VM"   # when done
+
+# Connect (requires the EC2 Instance Connect CLI / SSM plugin):
+aws ec2-instance-connect ssh --instance-id "$DEV_VM"
+```
+
+From the VM, fetch the database DSN the same way as the
+[bastion section](#connect) — the instance role is allowed to read it.

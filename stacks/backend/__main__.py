@@ -174,6 +174,125 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
+# EC2 Instance Connect Endpoint + dev VM for loading datasets into the ORM.
+#
+# The dev VM has no public IP; SSH reaches it through the Instance Connect
+# Endpoint (gated by IAM), e.g.:
+#   aws ec2-instance-connect ssh --instance-id "$(pulumi -C stacks/backend stack output dev_vm_instance_id)"
+#
+# AWS can't launch an instance in the stopped state, and the provider doesn't
+# manage power state, so the VM comes up running on first `pulumi up`; stop it
+# once and it stays stopped (Pulumi won't restart it). Start/stop on demand:
+#   aws ec2 start-instances --instance-ids "$(pulumi -C stacks/backend stack output dev_vm_instance_id)"
+#   aws ec2 stop-instances  --instance-ids "$(pulumi -C stacks/backend stack output dev_vm_instance_id)"
+
+# SG on the endpoint itself: it only needs to reach instances in the VPC on 22.
+instance_connect_security_group = aws.ec2.SecurityGroup(
+    "instance_connect_security_group",
+    egress=[
+        aws.ec2.SecurityGroupEgressArgs(
+            from_port=22,
+            to_port=22,
+            protocol="tcp",
+            cidr_blocks=[vpc.vpc.cidr_block],
+        )
+    ],
+    vpc_id=vpc.vpc_id,
+)
+
+# SG on the dev VM: SSH only from the Instance Connect Endpoint; open egress.
+dev_vm_security_group = aws.ec2.SecurityGroup(
+    "dev_vm_security_group",
+    egress=[
+        aws.ec2.SecurityGroupEgressArgs(
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            cidr_blocks=["0.0.0.0/0"],
+            ipv6_cidr_blocks=["::/0"],
+        )
+    ],
+    ingress=[
+        aws.ec2.SecurityGroupIngressArgs(
+            from_port=22,
+            to_port=22,
+            protocol="tcp",
+            security_groups=[instance_connect_security_group.id],
+        )
+    ],
+    vpc_id=vpc.vpc_id,
+)
+
+instance_connect_endpoint = aws.ec2transitgateway.InstanceConnectEndpoint(
+    "instance_connect_endpoint",
+    subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
+    security_group_ids=[instance_connect_security_group.id],
+    preserve_client_ip=False,
+)
+
+dev_vm_role = aws.iam.Role(
+    "dev_vm_role",
+    assume_role_policy=json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "ec2.amazonaws.com"},
+                    "Action": "sts:AssumeRole",
+                }
+            ],
+        }
+    ),
+)
+aws.iam.RolePolicyAttachment(
+    "dev_vm_ssm_policy",
+    role=dev_vm_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+)
+
+
+# Read access to the RDS credentials so dataset-loading scripts can connect.
+def _secrets_read_policy(arns: list[str]) -> str:
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "secretsmanager:GetSecretValue",
+                    "Resource": arns,
+                },
+            ],
+        }
+    )
+
+
+aws.iam.RolePolicy(
+    "dev_vm_secrets",
+    role=dev_vm_role.id,
+    policy=pulumi.Output.all(rds_password_secret.arn, rds_dsn_secret.arn).apply(_secrets_read_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+dev_vm_instance_profile = aws.iam.InstanceProfile("dev_vm_instance_profile", role=dev_vm_role.name)
+
+dev_vm_ami_id = aws.ssm.get_parameter_output(
+    name="/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+).value
+
+dev_vm = aws.ec2.Instance(
+    "dev_vm",
+    ami=dev_vm_ami_id,
+    instance_type="t3.xlarge",
+    iam_instance_profile=dev_vm_instance_profile.name,
+    subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
+    vpc_security_group_ids=[dev_vm_security_group.id],
+    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(volume_size=50, volume_type="gp3"),
+    tags={"Name": "dev-vm"},
+    # The VM holds in-progress dataset work on its root volume; don't let a newer
+    # base AMI trigger a replace. Bump deliberately by tainting when you want one.
+    opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
+)
+
 aws.s3.Bucket(
     "ord_bucket",
     bucket="open-reaction-database",
@@ -188,3 +307,5 @@ pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
 pulumi.export("redis_endpoint", redis.endpoints.apply(lambda endpoints: endpoints[0]["address"]))  # ty: ignore[missing-argument, invalid-argument-type]
 pulumi.export("bastion_instance_id", bastion.id)
+pulumi.export("dev_vm_instance_id", dev_vm.id)
+pulumi.export("instance_connect_endpoint_id", instance_connect_endpoint.id)
