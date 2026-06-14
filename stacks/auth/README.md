@@ -8,10 +8,11 @@ Pulumi stack for **Auth0** tenant resources — currently the `ORD App` applicat
 
 The provider authenticates with a **machine-to-machine** application authorized for
 the Auth0 Management API. It needs the scopes that `management_api_grant` requests
-in `__main__.py`: `read/create/update/delete:clients`,
-`read/create/update/delete:client_grants`, `read:client_keys` (to read the M2M
-app's own secret on import), `read:resource_servers`, and `read:connections`. Set
-the credentials as stack config (the secrets are encrypted into `Pulumi.<stack>.yaml`):
+in `__main__.py`: `read/create/update:clients`, `read/create/update:client_grants`,
+`read:client_keys` (to read the M2M app's own secret on import), `read:resource_servers`,
+and `read:connections`. (No `delete:*` — the managed resources are protected, so the
+grant deliberately can't delete them even if the credentials leak.) Set the
+credentials as stack config (the secrets are encrypted into `Pulumi.<stack>.yaml`):
 
 ```sh
 pulumi -C stacks/auth config set        auth0:domain       open-reaction-database.us.auth0.com

@@ -89,15 +89,16 @@ management_api_grant = auth0.ClientGrant(
     "management_api_grant",
     client_id=management_api.client_id,
     audience="https://open-reaction-database.us.auth0.com/api/v2/",
+    # No delete:clients / delete:client_grants: the managed resources are protect=True,
+    # but that only blocks Pulumi-side deletion — withholding the delete scopes means
+    # leaked M2M creds can't delete the prod SPA or this grant via the Management API.
     scopes=[
         "read:clients",
         "create:clients",
         "update:clients",
-        "delete:clients",
         "read:client_grants",
         "create:client_grants",
         "update:client_grants",
-        "delete:client_grants",
         "read:resource_servers",
         "read:connections",
         "read:client_keys",
