@@ -29,11 +29,11 @@ backend = pulumi.StackReference("ord/backend/prod")
 TUNNEL_HOST = "localhost"
 TUNNEL_PORT = 15432
 
-# Every application database in the cluster. The first three predate IaC (created
-# out-of-band) and are imported; app_staging is created here for the staging app.
-# The read-only role is granted across all of them.
+# Every application database in the cluster. The production databases are protected;
+# app_staging is the disposable staging database. The read-only role is granted
+# across all of them.
 DATABASES = ["app", "ord", "editor", "app_staging"]
-EXISTING_DATABASES = {"app", "ord", "editor"}
+PROD_DATABASES = {"app", "ord", "editor"}
 
 # Credentials come from the secrets the backend stack manages: the master user to
 # connect as, and the generated password the `readonly` role should have.
@@ -89,7 +89,7 @@ databases = {
             # Existing databases hold real data — protect them. app_staging is
             # disposable test data, so leave it unprotected: retiring staging is
             # then just removing it here + `pulumi up`, with no unprotect step.
-            protect=db in EXISTING_DATABASES,
+            protect=db in PROD_DATABASES,
         ),
     )
     for db in DATABASES
