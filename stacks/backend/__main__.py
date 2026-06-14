@@ -117,7 +117,7 @@ aws.secretsmanager.SecretVersion(
         # special characters would otherwise corrupt parsing (e.g. `#`, `?`, `@`).
         secret_string=pulumi.Output.format(
             "postgresql+psycopg://readonly:{0}@{1}:5432/app",
-            readonly_password.result.apply(lambda pw: quote(pw, safe="")),
+            readonly_password.result.apply(lambda pw: quote(pw, safe="")),  # ty: ignore[missing-argument, invalid-argument-type]
             cluster.endpoint,
         ),
     ),
