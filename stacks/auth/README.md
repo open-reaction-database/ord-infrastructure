@@ -7,9 +7,11 @@ Pulumi stack for **Auth0** tenant resources — currently the `ORD App` applicat
 ## Credentials
 
 The provider authenticates with a **machine-to-machine** application authorized for
-the Auth0 Management API. It needs `read:clients` + `update:clients` (and
-`read:resource_servers` / `read:connections` if those are added here later). Set
-them as stack config (the secrets are encrypted into `Pulumi.<stack>.yaml`):
+the Auth0 Management API. It needs the scopes that `management_api_grant` requests
+in `__main__.py`: `read/create/update/delete:clients`,
+`read/create/update/delete:client_grants`, `read:client_keys` (to read the M2M
+app's own secret on import), `read:resource_servers`, and `read:connections`. Set
+the credentials as stack config (the secrets are encrypted into `Pulumi.<stack>.yaml`):
 
 ```sh
 pulumi -C stacks/auth config set        auth0:domain       open-reaction-database.us.auth0.com
@@ -43,12 +45,22 @@ management with `pulumi import` and the code was written to match its exact curr
 configuration, verified by a no-op preview, before any change was applied. The
 resource is `protect=True` so Pulumi will never delete or replace it.
 
-To adopt the existing application in a fresh state (e.g. new backend):
+The same applies to **all** resources in this stack — `ord_app`, the `management_api`
+M2M client, and its `management_api_grant`. To adopt them in a fresh state (e.g. new
+backend), import each, then confirm a no-op preview:
 
 ```sh
-pulumi -C stacks/auth import auth0:index/client:Client ord_app <client_id>
+pulumi -C stacks/auth import auth0:index/client:Client      ord_app             <ord_app_client_id>
+pulumi -C stacks/auth import auth0:index/client:Client      management_api      <m2m_client_id>
+pulumi -C stacks/auth import auth0:index/clientGrant:ClientGrant management_api_grant <grant_id>
 pulumi -C stacks/auth preview   # must show no changes before you trust it
 ```
+
+Bootstrapping note: the provider can only authenticate once the M2M app **and** its
+Management API grant exist — that grant is what makes the provider credentials work.
+On a brand-new tenant, create the M2M app + grant out-of-band first (Auth0 dashboard
+or `auth0 apps create --type m2m` + `auth0 api post client-grants`), set the provider
+config to its credentials, then run the imports above.
 
 ## Callback / logout URLs
 
