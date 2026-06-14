@@ -14,10 +14,13 @@ dependency is quarantined here, in the one stack that actually needs it.
 
 ## What it manages
 
+- The application **databases**: `app`, `ord`, and `editor` (imported and
+  `protect`ed — they predate IaC and hold data, so they're adopted in place, never
+  recreated) plus `app_staging` (created here, for the staging app).
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
-  tables, across the `app`, `ord`, and `editor` databases.
+  tables, across all four databases.
 
 ## Deploying
 

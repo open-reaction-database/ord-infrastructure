@@ -29,8 +29,11 @@ backend = pulumi.StackReference("ord/backend/prod")
 TUNNEL_HOST = "localhost"
 TUNNEL_PORT = 15432
 
-# The read-only role is granted across every application database in the cluster.
-DATABASES = ["app", "ord", "editor"]
+# Every application database in the cluster. The first three predate IaC (created
+# out-of-band) and are imported; app_staging is created here for the staging app.
+# The read-only role is granted across all of them.
+DATABASES = ["app", "ord", "editor", "app_staging"]
+EXISTING_DATABASES = {"app", "ord", "editor"}
 
 # Credentials come from the secrets the backend stack manages: the master user to
 # connect as, and the generated password the `readonly` role should have.
@@ -59,17 +62,47 @@ providers = {
     for db in DATABASES
 }
 
+# CREATE DATABASE and database-level settings run against a maintenance database
+# that always exists (`postgres`), not the database being managed.
+maintenance_provider = postgresql.Provider(
+    "pg_maintenance",
+    host=TUNNEL_HOST,
+    port=TUNNEL_PORT,
+    username="ord",
+    password=master_password,
+    database="postgres",
+    sslmode="require",
+    superuser=False,
+)
+
+# Manage every application database. The pre-existing ones are imported and
+# protected so Pulumi adopts them in place without recreating (a replace would drop
+# the data); app_staging is created fresh.
+databases = {
+    db: postgresql.Database(
+        f"db_{db}",
+        name=db,
+        owner="ord",
+        opts=pulumi.ResourceOptions(
+            provider=maintenance_provider,
+            protect=True,
+            import_=db if db in EXISTING_DATABASES else None,
+        ),
+    )
+    for db in DATABASES
+}
+
 # The role is a cluster-global object; create it once via any provider.
 readonly = postgresql.Role(
     "readonly",
     name="readonly",
     login=True,
     password=readonly_password,
-    opts=pulumi.ResourceOptions(provider=providers["ord"]),
+    opts=pulumi.ResourceOptions(provider=providers["ord"], depends_on=[databases["ord"]]),
 )
 
 for db, provider in providers.items():
-    opts = pulumi.ResourceOptions(provider=provider, depends_on=[readonly])
+    opts = pulumi.ResourceOptions(provider=provider, depends_on=[readonly, databases[db]])
     postgresql.Grant(
         f"{db}_connect",
         database=db,
