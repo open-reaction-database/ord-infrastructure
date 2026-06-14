@@ -254,6 +254,7 @@ dependencies = [
     { name = "pulumi" },
     { name = "pulumi-aws" },
     { name = "pulumi-awsx" },
+    { name = "pulumi-postgresql" },
     { name = "pulumi-random" },
 ]
 
@@ -268,6 +269,7 @@ requires-dist = [
     { name = "pulumi", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-aws", specifier = ">=7.0.0,<8.0.0" },
     { name = "pulumi-awsx", specifier = ">=3.0.0,<4.0.0" },
+    { name = "pulumi-postgresql", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-random", specifier = ">=4.0.0,<5.0.0" },
 ]
 
@@ -392,6 +394,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/31/9b9e9fe7c4fea6f0f5fcfa37110888b9c772cfb15ef1740ba6338a936378/pulumi_docker_build-0.0.15.tar.gz", hash = "sha256:a6301d9c1bfc749a3bce37280ef60c3f9a3dc767f89b62e99edf24ec46de0a6e", size = 38723, upload-time = "2025-10-17T11:03:54.948Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/2a/cbbd2bf07f2082e6187d52c463166a522f1960aaf7d34bf59a57e7a51327/pulumi_docker_build-0.0.15-py3-none-any.whl", hash = "sha256:6121e09e6ccdbc8c60695631e7f3d7da22a6188a9ccba16ec3b37dc449d6c45e", size = 43384, upload-time = "2025-10-17T11:03:52.891Z" },
+]
+
+[[package]]
+name = "pulumi-postgresql"
+version = "3.17.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/aa/e7/39926c6a9450809248f15f8ce7ce0fefb002af5333eaf9c31f45cf8b1739/pulumi_postgresql-3.17.0.tar.gz", hash = "sha256:1b456d9bf429ff97fe07e62e88f93ca7797fd6ce49cf3b2d162b08cf5983d384", size = 50988, upload-time = "2026-05-22T12:38:37.14Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/b0/71b731ec674f66445a16b0858ddb014204f202bd6908ed11e9ce8111ce2f/pulumi_postgresql-3.17.0-py3-none-any.whl", hash = "sha256:04e2626622e13cb86f255dc99ea595e6d9301cdbf42eb96d32b5e4bd43efab61", size = 76822, upload-time = "2026-05-22T12:38:35.628Z" },
 ]
 
 [[package]]

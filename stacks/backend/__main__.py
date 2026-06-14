@@ -15,6 +15,7 @@
 """Shared backend infrastructure: VPC, RDS Aurora, Redis, and an SSM bastion."""
 
 import json
+from urllib.parse import quote
 
 import pulumi
 import pulumi_aws as aws
@@ -91,6 +92,33 @@ aws.secretsmanager.SecretVersion(
         secret_id=rds_dsn_secret.id,
         secret_string=pulumi.Output.format(
             "postgresql+psycopg://ord:{0}@{1}:5432/app", rds_password.result, cluster.endpoint
+        ),
+    ),
+)
+
+# Read-only credentials for database access (humans and automation alike). The
+# Postgres role `readonly` itself is created out-of-band via the bastion (see
+# backend/README.md); Pulumi owns the generated password and the secrets consumers
+# read. The master (read-write) credentials above are reserved for authorized writes.
+readonly_password = random.RandomPassword(
+    "readonly_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?"
+)
+rds_ro_password_secret = aws.secretsmanager.Secret("rds_ro_password")
+aws.secretsmanager.SecretVersion(
+    "rds_ro_password_secret_version",
+    aws.secretsmanager.SecretVersionArgs(secret_id=rds_ro_password_secret.id, secret_string=readonly_password.result),
+)
+rds_ro_dsn_secret = aws.secretsmanager.Secret("rds_ro_dsn")
+aws.secretsmanager.SecretVersion(
+    "rds_ro_dsn_secret_version",
+    aws.secretsmanager.SecretVersionArgs(
+        secret_id=rds_ro_dsn_secret.id,
+        # Percent-encode the password: it's embedded in a URI, and the random
+        # special characters would otherwise corrupt parsing (e.g. `#`, `?`, `@`).
+        secret_string=pulumi.Output.format(
+            "postgresql+psycopg://readonly:{0}@{1}:5432/app",
+            readonly_password.result.apply(lambda pw: quote(pw, safe="")),  # ty: ignore[missing-argument, invalid-argument-type]
+            cluster.endpoint,
         ),
     ),
 )
@@ -265,7 +293,8 @@ aws.iam.RolePolicyAttachment(
 )
 
 
-# Read access to the RDS credentials so dataset-loading scripts can connect.
+# Read access to the RDS credentials so the VM can fetch the read-only creds for
+# inspection and the master creds for authorized dataset loads.
 def _secrets_read_policy(arns: list[str]) -> str:
     return json.dumps(
         {
@@ -284,7 +313,9 @@ def _secrets_read_policy(arns: list[str]) -> str:
 aws.iam.RolePolicy(
     "dev_vm_secrets",
     role=dev_vm_role.id,
-    policy=pulumi.Output.all(rds_password_secret.arn, rds_dsn_secret.arn).apply(_secrets_read_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+    policy=pulumi.Output.all(
+        rds_password_secret.arn, rds_dsn_secret.arn, rds_ro_password_secret.arn, rds_ro_dsn_secret.arn
+    ).apply(_secrets_read_policy),  # ty: ignore[missing-argument, invalid-argument-type]
 )
 dev_vm_instance_profile = aws.iam.InstanceProfile("dev_vm_instance_profile", role=dev_vm_role.name)
 
@@ -319,6 +350,8 @@ pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 pulumi.export("rds_endpoint", cluster.endpoint)
 pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
+pulumi.export("rds_ro_password_secret_arn", rds_ro_password_secret.arn)
+pulumi.export("rds_ro_dsn_secret_arn", rds_ro_dsn_secret.arn)
 pulumi.export("redis_endpoint", redis.endpoints.apply(lambda endpoints: endpoints[0]["address"]))  # ty: ignore[missing-argument, invalid-argument-type]
 pulumi.export("bastion_instance_id", bastion.id)
 pulumi.export("dev_vm_instance_id", dev_vm.id)

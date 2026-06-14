@@ -78,3 +78,21 @@ aws ec2-instance-connect ssh --instance-id "$DEV_VM"
 
 From the VM, fetch the database DSN the same way as the
 [bastion section](#connect) — the instance role is allowed to read it.
+
+## Read-only vs read-write credentials
+
+There are two credential sets in Secrets Manager:
+
+- **`rds_ro_dsn` / `rds_ro_password`** — the `readonly` Postgres role. **Use these by
+  default** for any inspection, by humans and automation alike. The role has `SELECT`
+  on the `app`, `ord`, and `editor` databases; the `rds_ro_dsn` connection string
+  targets `app` — change the database name in it (or use `rds_ro_password` directly)
+  to read `ord` or `editor`.
+- **`rds_dsn` / `rds_password`** — the master `ord` user (full read-write). Reserved
+  for authorized writes (e.g. dataset loads). Don't use these for routine reads.
+
+This stack owns the `readonly` password and the `rds_ro_*` secrets, but the
+Postgres `readonly` role itself (and its grants) is managed declaratively by the
+[`database` stack](../database/README.md), which reads `rds_ro_password` to set
+the role's password. Deploy `backend` first, then `database` (with the bastion
+tunnel open).
