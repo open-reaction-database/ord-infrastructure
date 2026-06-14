@@ -1,4 +1,4 @@
-# Copyright 2025 Open Reaction Database Project Authors
+# Copyright 2026 Open Reaction Database Project Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -313,6 +313,7 @@ aws.s3.Bucket(
 )
 
 pulumi.export("vpc_id", vpc.vpc_id)
+pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 pulumi.export("rds_endpoint", cluster.endpoint)
