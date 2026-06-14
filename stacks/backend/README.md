@@ -83,9 +83,11 @@ From the VM, fetch the database DSN the same way as the
 
 There are two credential sets in Secrets Manager:
 
-- **`rds_ro_dsn` / `rds_ro_password`** — the `readonly` Postgres role, `SELECT`-only
-  across the `app`, `ord`, and `editor` databases. **Use these by default** for any
-  inspection, by humans and automation alike.
+- **`rds_ro_dsn` / `rds_ro_password`** — the `readonly` Postgres role. **Use these by
+  default** for any inspection, by humans and automation alike. The role has `SELECT`
+  on the `app`, `ord`, and `editor` databases; the `rds_ro_dsn` connection string
+  targets `app` — change the database name in it (or use `rds_ro_password` directly)
+  to read `ord` or `editor`.
 - **`rds_dsn` / `rds_password`** — the master `ord` user (full read-write). Reserved
   for authorized writes (e.g. dataset loads). Don't use these for routine reads.
 
