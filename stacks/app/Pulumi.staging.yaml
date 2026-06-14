@@ -18,3 +18,6 @@ config:
   app:database: app_staging
   # Deploy whatever branch is checked out in ord-app, not just a clean main.
   app:enforce_clean: "false"
+  # Smaller/cheaper than prod's 4 vCPU / 8 GB — plenty for a test environment.
+  app:cpu: "1024"
+  app:memory: "2048"

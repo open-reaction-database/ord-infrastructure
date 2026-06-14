@@ -130,6 +130,9 @@ def make_web_service(
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
     enforce_clean: bool = True,
+    name_prefix: str | None = None,
+    cpu: int = 4096,
+    memory: int = 8192,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -160,15 +163,49 @@ def make_web_service(
         enforce_clean: If True (default, for prod), require the sibling repo to be on
             a clean `main` before building the image. Set False for staging so the
             current working tree (any branch) can be deployed.
+        name_prefix: Explicit physical-name prefix for the ALB and target group
+            (alphanumeric + hyphens only — AWS forbids underscores in these names).
+            Required for any new environment; leave None for prod so its existing
+            auto-generated names are preserved.
+        cpu: Fargate task CPU units (default 4096 = 4 vCPU). Must form a valid
+            Fargate CPU/memory combination.
+        memory: Fargate task memory in MiB (default 8192 = 8 GB).
 
     Returns:
         The created FargateService.
+
+    Raises:
+        ValueError: If ``name_prefix`` is too long; AWS caps ALB/target-group names
+            at 32 chars, and the longest derived name is ``f"{name_prefix}-dtg"``.
     """
+    if name_prefix is not None and len(name_prefix) > 28:
+        raise ValueError(f"name_prefix {name_prefix!r} is too long (max 28 chars; derived names append up to '-dtg')")
     target_group = aws.lb.TargetGroup(
-        "target_group", port=container_port, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
+        "target_group",
+        name=f"{name_prefix}-tg" if name_prefix else None,
+        port=container_port,
+        protocol="HTTP",
+        target_type="ip",
+        vpc_id=backend.get_output("vpc_id"),
     )
     load_balancer = awsx.lb.ApplicationLoadBalancer(
         "load_balancer",
+        name=name_prefix,
+        # awsx always creates a default target group named after this component's
+        # logical name ("load_balancer" → an invalid underscore name on a fresh
+        # deploy). The listeners forward to `target_group`, so the default is unused
+        # — but it still needs a valid name. (prod keeps its existing one.)
+        default_target_group=(
+            awsx.lb.TargetGroupArgs(
+                name=f"{name_prefix}-dtg",
+                port=container_port,
+                protocol="HTTP",
+                target_type="ip",
+                vpc_id=backend.get_output("vpc_id"),  # required by AWS when target_type is "ip"
+            )
+            if name_prefix
+            else None
+        ),
         listeners=[
             awsx.lb.ListenerArgs(
                 default_actions=[
@@ -267,8 +304,8 @@ def make_web_service(
                 container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                     name="container",
                     image=image.image_uri,
-                    cpu=4096,
-                    memory=8192,
+                    cpu=cpu,
+                    memory=memory,
                     essential=True,
                     port_mappings=[
                         awsx.ecs.TaskDefinitionPortMappingArgs(container_port=container_port, host_port=container_port)
