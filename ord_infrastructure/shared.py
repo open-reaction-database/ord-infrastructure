@@ -234,7 +234,7 @@ def make_web_service(
                 from_port=container_port,
                 to_port=container_port,
                 protocol="tcp",
-                cidr_blocks=[aws.ec2.get_vpc_output(id=backend.get_output("vpc_id")).cidr_block],
+                cidr_blocks=[backend.get_output("vpc_cidr_block")],
             )
         ],
         vpc_id=backend.get_output("vpc_id"),
