@@ -168,7 +168,13 @@ def make_web_service(
 
     Returns:
         The created FargateService.
+
+    Raises:
+        ValueError: If ``name_prefix`` is too long; AWS caps ALB/target-group names
+            at 32 chars, and the longest derived name is ``f"{name_prefix}-dtg"``.
     """
+    if name_prefix is not None and len(name_prefix) > 28:
+        raise ValueError(f"name_prefix {name_prefix!r} is too long (max 28 chars; derived names append up to '-dtg')")
     target_group = aws.lb.TargetGroup(
         "target_group",
         name=f"{name_prefix}-tg" if name_prefix else None,
@@ -185,7 +191,13 @@ def make_web_service(
         # deploy). The listeners forward to `target_group`, so the default is unused
         # — but it still needs a valid name. (prod keeps its existing one.)
         default_target_group=(
-            awsx.lb.TargetGroupArgs(name=f"{name_prefix}-dtg", port=container_port, protocol="HTTP", target_type="ip")
+            awsx.lb.TargetGroupArgs(
+                name=f"{name_prefix}-dtg",
+                port=container_port,
+                protocol="HTTP",
+                target_type="ip",
+                vpc_id=backend.get_output("vpc_id"),  # required by AWS when target_type is "ip"
+            )
             if name_prefix
             else None
         ),
