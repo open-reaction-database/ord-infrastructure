@@ -74,7 +74,10 @@ cluster = aws.rds.Cluster(
     # period is the TTL — backups older than 30 days auto-expire. Storage is free up
     # to the cluster volume size, so this is ~free for a database this small.
     backup_retention_period=30,
+    # Set both windows explicitly so they can't overlap (AWS rejects overlapping
+    # backup/maintenance windows; an auto-assigned maintenance window might).
     preferred_backup_window="07:00-08:00",
+    preferred_maintenance_window="sun:05:00-sun:06:00",
     copy_tags_to_snapshot=True,
     serverlessv2_scaling_configuration=aws.rds.ClusterServerlessv2ScalingConfigurationArgs(
         min_capacity=0,

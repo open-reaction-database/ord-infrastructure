@@ -85,7 +85,10 @@ databases = {
         owner="ord",
         opts=pulumi.ResourceOptions(
             provider=maintenance_provider,
-            protect=True,
+            # Existing databases hold real data — protect them. app_staging is
+            # disposable test data, so leave it unprotected: retiring staging is
+            # then just removing it here + `pulumi up`, with no unprotect step.
+            protect=db in EXISTING_DATABASES,
             import_=db if db in EXISTING_DATABASES else None,
         ),
     )
