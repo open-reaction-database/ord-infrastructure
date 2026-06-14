@@ -136,7 +136,7 @@ def make_web_service(
     redirecting ALB, a Route 53 alias to it, an ECR image built from a sibling repo
     (gated by `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
 
-    Resource names are fixed (e.g. "service", "load-balancer"), so call this at most
+    Resource names are fixed (e.g. "service", "load_balancer"), so call this at most
     once per Pulumi project; the URNs stay stable across the two callers because each
     runs in its own project.
 
@@ -161,10 +161,10 @@ def make_web_service(
         The created FargateService.
     """
     target_group = aws.lb.TargetGroup(
-        "target-group", port=container_port, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
+        "target_group", port=container_port, protocol="HTTP", target_type="ip", vpc_id=backend.get_output("vpc_id")
     )
     load_balancer = awsx.lb.ApplicationLoadBalancer(
-        "load-balancer",
+        "load_balancer",
         listeners=[
             awsx.lb.ListenerArgs(
                 default_actions=[
