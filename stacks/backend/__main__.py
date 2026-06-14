@@ -286,7 +286,7 @@ dev_vm = aws.ec2.Instance(
     iam_instance_profile=dev_vm_instance_profile.name,
     subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
     vpc_security_group_ids=[dev_vm_security_group.id],
-    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(volume_size=100, volume_type="gp3"),
+    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(volume_size=50, volume_type="gp3"),
     tags={"Name": "dev-vm"},
     # The VM holds in-progress dataset work on its root volume; don't let a newer
     # base AMI trigger a replace. Bump deliberately by tainting when you want one.

@@ -57,8 +57,8 @@ aws ec2 start-instances --instance-ids "$BASTION"
 ## Dev VM (loading datasets into the ORM)
 
 A `t3.xlarge` Ubuntu 24.04 instance (`dev-vm`) for loading datasets into the
-database. It has a 100 GB root volume, no public IP, and an instance role that
-can read the RDS credential secrets. SSH reaches it through an EC2 Instance
+database. It has a 50 GB gp3 root volume (grow it later if needed — no replace),
+no public IP, and an instance role that can read the RDS credential secrets. SSH reaches it through an EC2 Instance
 Connect Endpoint (IAM-gated — no SSH keys or open ports).
 
 **It is meant to stay stopped.** AWS can't launch an instance pre-stopped, so it
