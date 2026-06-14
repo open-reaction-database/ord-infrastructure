@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""An AWS Python Pulumi program."""
+"""ECS Fargate service, ALB, and DNS for ord-app."""
 
 import pulumi
 import pulumi_aws as aws

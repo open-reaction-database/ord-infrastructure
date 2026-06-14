@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: backend
-description: A minimal AWS Python Pulumi program
+description: Shared backend infrastructure — VPC, RDS Aurora cluster, Redis, and an SSM bastion for local DB access. Other stacks consume its outputs via StackReference.
 runtime:
   name: python
   options:

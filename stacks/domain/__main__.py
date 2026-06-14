@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""An AWS Python Pulumi program."""
+"""DNS and TLS: Route 53 hosted zone with DNSSEC and ACM certificates."""
 
 import json
 from collections.abc import Sequence

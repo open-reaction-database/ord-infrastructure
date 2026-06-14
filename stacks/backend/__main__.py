@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""An AWS Python Pulumi program."""
+"""Shared backend infrastructure: VPC, RDS Aurora, Redis, and an SSM bastion."""
 
 import json
 
@@ -121,29 +121,6 @@ redis = aws.elasticache.ServerlessCache(
     },
     security_group_ids=[redis_security_group.id],
     subnet_ids=vpc.private_subnet_ids,
-)
-
-dev_security_group = aws.ec2.SecurityGroup(
-    "dev_security_group",
-    egress=[
-        aws.ec2.SecurityGroupEgressArgs(
-            from_port=0,
-            to_port=0,
-            protocol="-1",
-            cidr_blocks=["0.0.0.0/0"],
-            ipv6_cidr_blocks=["::/0"],
-        )
-    ],
-    ingress=[
-        aws.ec2.SecurityGroupIngressArgs(
-            from_port=22,
-            to_port=22,
-            protocol="tcp",
-            cidr_blocks=["0.0.0.0/0"],
-            ipv6_cidr_blocks=["::/0"],
-        )
-    ],
-    vpc_id=vpc.vpc_id,
 )
 
 # Bastion for local DB access via SSM port forwarding (no public IP, no inbound ports).
