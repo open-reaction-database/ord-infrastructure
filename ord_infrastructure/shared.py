@@ -133,6 +133,7 @@ def make_web_service(
     name_prefix: str | None = None,
     cpu: int = 4096,
     memory: int = 8192,
+    cluster_name: str | None = None,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -170,6 +171,9 @@ def make_web_service(
         cpu: Fargate task CPU units (default 4096 = 4 vCPU). Must form a valid
             Fargate CPU/memory combination.
         memory: Fargate task memory in MiB (default 8192 = 8 GB).
+        cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
+            "interface") so clusters are distinguishable in the console. None
+            auto-generates a "cluster-*" name. Changing it replaces the cluster.
 
     Returns:
         The created FargateService.
@@ -282,7 +286,7 @@ def make_web_service(
         vpc_id=backend.get_output("vpc_id"),
     )
 
-    cluster = aws.ecs.Cluster("cluster")
+    cluster = aws.ecs.Cluster("cluster", name=cluster_name)
 
     execution_role = make_ecs_execution_role("execution_role", secret_arns)
 

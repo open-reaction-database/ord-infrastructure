@@ -55,4 +55,5 @@ make_web_service(
             value_from=github_client_secret.arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::"),  # ty: ignore[missing-argument, invalid-argument-type]
         ),
     ],
+    cluster_name="interface",
 )
