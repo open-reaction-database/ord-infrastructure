@@ -47,6 +47,11 @@ cluster_subnet_group = aws.rds.SubnetGroup("cluster_subnet_group", subnet_ids=vp
 
 rds_password = random.RandomPassword("rds_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?")
 
+# Random suffix for the final snapshot name: stable in state (no per-run drift),
+# and regenerated if the cluster is ever recreated, so a second teardown can't
+# collide with a leftover snapshot from the first.
+final_snapshot_suffix = random.RandomId("final_snapshot_suffix", byte_length=4)
+
 cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
@@ -62,7 +67,7 @@ cluster = aws.rds.Cluster(
     # taken if the cluster is ever deleted anyway.
     deletion_protection=True,
     skip_final_snapshot=False,
-    final_snapshot_identifier="cluster-final-snapshot",
+    final_snapshot_identifier=pulumi.Output.concat("cluster-final-snapshot-", final_snapshot_suffix.hex),
     storage_encrypted=True,
     serverlessv2_scaling_configuration=aws.rds.ClusterServerlessv2ScalingConfigurationArgs(
         min_capacity=0,
