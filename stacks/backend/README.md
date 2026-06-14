@@ -78,3 +78,44 @@ aws ec2-instance-connect ssh --instance-id "$DEV_VM"
 
 From the VM, fetch the database DSN the same way as the
 [bastion section](#connect) — the instance role is allowed to read it.
+
+## Read-only vs read-write credentials
+
+There are two credential sets in Secrets Manager:
+
+- **`rds_ro_dsn` / `rds_ro_password`** — the `readonly` Postgres role, `SELECT`-only
+  across the `app`, `ord`, and `editor` databases. **Use these by default** for any
+  inspection, by humans and automation alike.
+- **`rds_dsn` / `rds_password`** — the master `ord` user (full read-write). Reserved
+  for authorized writes (e.g. dataset loads). Don't use these for routine reads.
+
+Pulumi owns the `readonly` password and the `rds_ro_*` secrets, but the Postgres
+role is created out-of-band (no `postgresql` provider is wired up). After the
+secret exists, create/refresh the role once, over the bastion tunnel, as the
+master user. The role's password must match the `rds_ro_password` secret:
+
+```sh
+RO_PW=$(aws secretsmanager get-secret-value --region us-east-1 \
+  --secret-id "$(pulumi -C stacks/backend stack output rds_ro_password_secret_arn)" \
+  --query SecretString --output text)
+
+# With the bastion tunnel open on localhost:15432 (see "Start the tunnel" above):
+psql "postgresql://ord:<master-pw>@localhost:15432/ord" <<SQL
+  DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='readonly') THEN
+      CREATE ROLE readonly LOGIN;
+    END IF;
+  END \$\$;
+  ALTER ROLE readonly PASSWORD '${RO_PW}';
+SQL
+
+# Per-database grants (repeat the inner block for app, ord, editor):
+for db in app ord editor; do
+  psql "postgresql://ord:<master-pw>@localhost:15432/${db}" <<SQL
+    GRANT CONNECT ON DATABASE ${db} TO readonly;
+    GRANT USAGE ON SCHEMA public TO readonly;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
+SQL
+done
+```
