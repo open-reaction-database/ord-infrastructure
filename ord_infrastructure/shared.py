@@ -131,6 +131,8 @@ def make_web_service(
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
     enforce_clean: bool = True,
     name_prefix: str | None = None,
+    cpu: int = 4096,
+    memory: int = 8192,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -165,6 +167,9 @@ def make_web_service(
             (alphanumeric + hyphens only — AWS forbids underscores in these names).
             Required for any new environment; leave None for prod so its existing
             auto-generated names are preserved.
+        cpu: Fargate task CPU units (default 4096 = 4 vCPU). Must form a valid
+            Fargate CPU/memory combination.
+        memory: Fargate task memory in MiB (default 8192 = 8 GB).
 
     Returns:
         The created FargateService.
@@ -299,8 +304,8 @@ def make_web_service(
                 container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                     name="container",
                     image=image.image_uri,
-                    cpu=4096,
-                    memory=8192,
+                    cpu=cpu,
+                    memory=memory,
                     essential=True,
                     port_mappings=[
                         awsx.ecs.TaskDefinitionPortMappingArgs(container_port=container_port, host_port=container_port)

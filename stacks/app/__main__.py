@@ -35,6 +35,9 @@ if enforce_clean is None:
 # Prod keeps its existing auto-generated ALB/target-group names (name_prefix=None);
 # new environments need an explicit prefix (AWS forbids underscores in those names).
 name_prefix = None if subdomain == "app" else subdomain
+# Fargate task size — prod's default is 4 vCPU / 8 GB; staging runs smaller/cheaper.
+cpu = config.get_int("cpu") or 4096
+memory = config.get_int("memory") or 8192
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -64,4 +67,6 @@ make_web_service(
     ],
     enforce_clean=enforce_clean,
     name_prefix=name_prefix,
+    cpu=cpu,
+    memory=memory,
 )
