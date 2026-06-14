@@ -146,11 +146,16 @@ def make_web_service(
         container_port: Port the container listens on; also the ALB target/health port.
         certificate_arn: ACM certificate ARN for the HTTPS listener.
         record_name: Fully-resolved DNS name for the Route 53 alias record.
-        sibling_path: Relative path to the sibling repo to build the image from.
-        dockerfile: Relative path to the Dockerfile within that build context.
-        secret_arns: Secrets Manager ARNs the execution role may read.
+        sibling_path: Path to the sibling repo to build the image from, relative to
+            the working directory (the calling stack's project directory).
+        dockerfile: Path to the Dockerfile, relative to the working directory (as
+            passed to `docker build -f`) — not relative to `sibling_path`.
+        secret_arns: Secrets Manager ARNs the execution role may read. Every ARN
+            referenced by a `secrets` entry's `value_from` must also be listed here,
+            or the task will fail to start with an IAM authorization error.
         environment: Plain environment variables for the container.
         secrets: Secrets injected into the container via the ECS `secrets` directive.
+            See `secret_arns` — the two must be kept in sync.
 
     Returns:
         The created FargateService.
