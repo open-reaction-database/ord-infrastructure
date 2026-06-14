@@ -163,5 +163,3 @@ cython_debug/
 .idea/
 
 .vite/
-# Local Auth0 inspection credentials — never commit
-auth0.txt
