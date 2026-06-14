@@ -10,6 +10,7 @@ ord-infrastructure/
 │   ├── account/             # IAM, AWS Identity Center (SSO), account-level S3 BPA
 │   ├── domain/              # Route 53 hosted zone and ACM certificates
 │   ├── backend/             # VPC, RDS Aurora, Redis, bastion (see backend/README.md)
+│   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
 │   ├── app/                 # ECS service, ALB, task definitions for ord-app
 │   └── interface/           # ECS service, ALB, task definitions for ord-interface
 ├── ord_infrastructure/      # Installable Python package of helpers shared across stacks
@@ -81,8 +82,9 @@ When bringing the stacks up from scratch:
 1. `account` — IAM, SSO, account-level controls
 2. `domain` — DNS + certs
 3. `backend` — VPC, database, cache (other stacks depend on its outputs via stack references)
-4. `app`
-5. `interface`
+4. `database` — in-DB roles/grants; requires the bastion tunnel open (see `database/README.md`)
+5. `app`
+6. `interface`
 
 For routine changes, deploy only the project you modified.
 
