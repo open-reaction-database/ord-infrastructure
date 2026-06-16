@@ -85,9 +85,10 @@ def sibling_head(path: str) -> str:
         return "unknown"
     sha = head.stdout.strip()
     # `git status --porcelain` (not `diff --quiet HEAD`) so untracked files count as dirty
-    # too — the Dockerfile may COPY a new-but-uncommitted file into the image.
+    # too — the Dockerfile may COPY a new-but-uncommitted file into the image. If status
+    # itself fails we can't confirm clean, so assume dirty rather than mislabel a release.
     status = subprocess.run(["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True)
-    dirty = bool(status.stdout.strip())
+    dirty = status.returncode != 0 or bool(status.stdout.strip())
     return f"{sha}-dirty" if dirty else sha
 
 
