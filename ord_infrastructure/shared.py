@@ -64,6 +64,30 @@ def assert_sibling_clean(path: str, branch: str = "main") -> None:
         )
 
 
+def sibling_head(path: str) -> str:
+    """Return the sibling repo's HEAD commit, for stamping image provenance.
+
+    Passed to the docker build as the ``GIT_COMMIT`` build arg, which the Dockerfile
+    records as the ``org.opencontainers.image.revision`` label — so the deployed image
+    says exactly which commit produced it instead of leaving it to be inferred from
+    build timestamps. Appends ``-dirty`` when the tree has uncommitted changes; prod is
+    gated clean by :func:`assert_sibling_clean`, but staging may build a dirty branch.
+
+    Args:
+        path: Path to the sibling repo.
+
+    Returns:
+        The 40-character HEAD SHA, suffixed with ``-dirty`` if the working tree is not
+        clean, or ``"unknown"`` if ``path`` is not a usable git repository.
+    """
+    head = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], capture_output=True, text=True)
+    if head.returncode != 0:
+        return "unknown"
+    sha = head.stdout.strip()
+    dirty = subprocess.run(["git", "-C", path, "diff", "--quiet", "HEAD"]).returncode != 0
+    return f"{sha}-dirty" if dirty else sha
+
+
 def make_ecs_execution_role(
     name: str,
     secret_arns: Sequence[pulumi.Input[str]],
@@ -261,6 +285,10 @@ def make_web_service(
             context=sibling_path,
             dockerfile=dockerfile,
             platform="linux/amd64",
+            # Stamp the source commit into the image (read back as the
+            # org.opencontainers.image.revision label) so a deployed image is traceable
+            # to a commit without correlating build timestamps against git history.
+            args={"GIT_COMMIT": sibling_head(sibling_path)},
         ),
     )
 
