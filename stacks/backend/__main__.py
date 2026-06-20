@@ -344,7 +344,10 @@ dev_vm = aws.ec2.Instance(
     tags={"Name": "dev-vm"},
     # The VM holds in-progress dataset work on its root volume; don't let a newer
     # base AMI trigger a replace. Bump deliberately by tainting when you want one.
-    opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
+    # instance_type is likewise ignored: the VM is resized by hand (stop, change
+    # type, start) to match the workload — loading a big dataset wants more vCPU
+    # than day-to-day use — and Pulumi shouldn't fight that off on the next deploy.
+    opts=pulumi.ResourceOptions(ignore_changes=["ami", "instance_type"]),
 )
 
 aws.s3.Bucket(
