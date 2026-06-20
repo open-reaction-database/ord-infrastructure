@@ -342,9 +342,14 @@ dev_vm = aws.ec2.Instance(
     vpc_security_group_ids=[dev_vm_security_group.id],
     root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(volume_size=50, volume_type="gp3"),
     tags={"Name": "dev-vm"},
-    # The VM holds in-progress dataset work on its root volume; don't let a newer
-    # base AMI trigger a replace. Bump deliberately by tainting when you want one.
-    opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
+    # Both ami and instance_type are ignored so routine deploys leave the VM alone:
+    # it holds in-progress dataset work on its root volume and is resized by hand
+    # (stop, change type, start) to match the workload — a big dataset load wants more
+    # vCPU than day-to-day use. To change either deliberately from code, temporarily
+    # drop it from ignore_changes and `pulumi up` — don't taint. An instance_type
+    # change is in-place (stop/resize/start, root volume preserved); an ami change
+    # forces a replace (new root volume), so only do that when you can lose the volume.
+    opts=pulumi.ResourceOptions(ignore_changes=["ami", "instance_type"]),
 )
 
 aws.s3.Bucket(
