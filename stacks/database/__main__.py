@@ -101,11 +101,15 @@ readonly = postgresql.Role(
     name="readonly",
     login=True,
     password=readonly_password,
-    opts=pulumi.ResourceOptions(provider=providers["ord"], depends_on=[databases["ord"]]),
+    opts=pulumi.ResourceOptions(
+        provider=providers["ord"], depends_on=[databases["ord"]]
+    ),
 )
 
 for db, provider in providers.items():
-    opts = pulumi.ResourceOptions(provider=provider, depends_on=[readonly, databases[db]])
+    opts = pulumi.ResourceOptions(
+        provider=provider, depends_on=[readonly, databases[db]]
+    )
     postgresql.Grant(
         f"{db}_connect",
         database=db,

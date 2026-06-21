@@ -45,14 +45,21 @@ domain = pulumi.StackReference("ord/domain/prod")
 # Passwordless DSN — the password is injected separately via PGPASSWORD, so the one
 # shared rds_password secret works for every environment and only the database name
 # differs. (ord-app's own default DSN is likewise passwordless.)
-pg_dsn = pulumi.Output.format("postgresql+psycopg://ord@{0}:5432/{1}", backend.get_output("rds_endpoint"), database)
+pg_dsn = pulumi.Output.format(
+    "postgresql+psycopg://ord@{0}:5432/{1}",
+    backend.get_output("rds_endpoint"),
+    database,
+)
+
+domain_name = domain.get_output("domain_name")
+record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
 make_web_service(
     backend=backend,
     domain=domain,
     container_port=5173,
     certificate_arn=domain.get_output("wildcard_certificate_arn"),
-    record_name=domain.get_output("domain_name").apply(lambda name: f"{subdomain}.{name}"),  # ty: ignore[missing-argument, invalid-argument-type]
+    record_name=record_name,
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
     secret_arns=[backend.get_output("rds_password_secret_arn")],
