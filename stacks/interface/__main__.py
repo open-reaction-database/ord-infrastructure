@@ -23,7 +23,12 @@ from ord_infrastructure.shared import make_web_service
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
 
-github_client_secret = aws.secretsmanager.Secret("github_client_secret", name="github-client")
+github_client_secret = aws.secretsmanager.Secret(
+    "github_client_secret", name="github-client"
+)
+gh_arn = github_client_secret.arn
+gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[missing-argument, invalid-argument-type]
+gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
 
 make_web_service(
     backend=backend,
@@ -33,12 +38,19 @@ make_web_service(
     record_name=domain.get_output("domain_name"),
     sibling_path="../../../ord-interface",
     dockerfile="../../../ord-interface/ord_interface/Dockerfile",
-    secret_arns=[backend.get_output("rds_password_secret_arn"), github_client_secret.arn],
+    secret_arns=[
+        backend.get_output("rds_password_secret_arn"),
+        github_client_secret.arn,
+    ],
     environment=[
-        awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_HOST", value=backend.get_output("rds_endpoint")),
+        awsx.ecs.TaskDefinitionKeyValuePairArgs(
+            name="POSTGRES_HOST", value=backend.get_output("rds_endpoint")
+        ),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_USER", value="ord"),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_DATABASE", value="ord"),
-        awsx.ecs.TaskDefinitionKeyValuePairArgs(name="REDIS_HOST", value=backend.get_output("redis_endpoint")),
+        awsx.ecs.TaskDefinitionKeyValuePairArgs(
+            name="REDIS_HOST", value=backend.get_output("redis_endpoint")
+        ),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="REDIS_SSL", value="1"),
     ],
     secrets=[
@@ -48,11 +60,11 @@ make_web_service(
         ),
         awsx.ecs.TaskDefinitionSecretArgs(
             name="GH_CLIENT_ID",
-            value_from=github_client_secret.arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::"),  # ty: ignore[missing-argument, invalid-argument-type]
+            value_from=gh_client_id,
         ),
         awsx.ecs.TaskDefinitionSecretArgs(
             name="GH_CLIENT_SECRET",
-            value_from=github_client_secret.arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::"),  # ty: ignore[missing-argument, invalid-argument-type]
+            value_from=gh_client_secret,
         ),
     ],
     cluster_name="interface",

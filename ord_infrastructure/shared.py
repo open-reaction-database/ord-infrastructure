@@ -35,7 +35,9 @@ def assert_sibling_clean(path: str, branch: str = "main") -> None:
     if os.environ.get("PULUMI_ALLOW_DIRTY"):
         return
     if subprocess.run(["git", "-C", path, "diff", "--quiet", "HEAD"]).returncode != 0:
-        sys.exit(f"ERROR: {path} has uncommitted changes; set PULUMI_ALLOW_DIRTY=1 to override")
+        sys.exit(
+            f"ERROR: {path} has uncommitted changes; set PULUMI_ALLOW_DIRTY=1 to override"
+        )
     actual_branch = subprocess.run(
         ["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
@@ -43,9 +45,18 @@ def assert_sibling_clean(path: str, branch: str = "main") -> None:
         check=True,
     ).stdout.strip()
     if actual_branch != branch:
-        sys.exit(f"ERROR: {path} is on '{actual_branch}', expected '{branch}'; set PULUMI_ALLOW_DIRTY=1 to override")
-    if subprocess.run(["git", "-C", path, "fetch", "--quiet", "origin", branch]).returncode != 0:
-        sys.exit(f"ERROR: failed to fetch {path} origin/{branch}; set PULUMI_ALLOW_DIRTY=1 to override")
+        sys.exit(
+            f"ERROR: {path} is on '{actual_branch}', expected '{branch}'; set PULUMI_ALLOW_DIRTY=1 to override"
+        )
+    if (
+        subprocess.run(
+            ["git", "-C", path, "fetch", "--quiet", "origin", branch]
+        ).returncode
+        != 0
+    ):
+        sys.exit(
+            f"ERROR: failed to fetch {path} origin/{branch}; set PULUMI_ALLOW_DIRTY=1 to override"
+        )
     local = subprocess.run(
         ["git", "-C", path, "rev-parse", "HEAD"],
         capture_output=True,
@@ -80,14 +91,18 @@ def sibling_head(path: str) -> str:
         The 40-character HEAD SHA, suffixed with ``-dirty`` if the working tree is not
         clean, or ``"unknown"`` if ``path`` is not a usable git repository.
     """
-    head = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], capture_output=True, text=True)
+    head = subprocess.run(
+        ["git", "-C", path, "rev-parse", "HEAD"], capture_output=True, text=True
+    )
     if head.returncode != 0:
         return "unknown"
     sha = head.stdout.strip()
     # `git status --porcelain` (not `diff --quiet HEAD`) so untracked files count as dirty
     # too — the Dockerfile may COPY a new-but-uncommitted file into the image. If status
     # itself fails we can't confirm clean, so assume dirty rather than mislabel a release.
-    status = subprocess.run(["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True)
+    status = subprocess.run(
+        ["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True
+    )
     dirty = status.returncode != 0 or bool(status.stdout.strip())
     return f"{sha}-dirty" if dirty else sha
 
@@ -211,7 +226,9 @@ def make_web_service(
             at 32 chars, and the longest derived name is ``f"{name_prefix}-dtg"``.
     """
     if name_prefix is not None and len(name_prefix) > 28:
-        raise ValueError(f"name_prefix {name_prefix!r} is too long (max 28 chars; derived names append up to '-dtg')")
+        raise ValueError(
+            f"name_prefix {name_prefix!r} is too long (max 28 chars; derived names append up to '-dtg')"
+        )
     target_group = aws.lb.TargetGroup(
         "target_group",
         name=f"{name_prefix}-tg" if name_prefix else None,
@@ -233,7 +250,9 @@ def make_web_service(
                 port=container_port,
                 protocol="HTTP",
                 target_type="ip",
-                vpc_id=backend.get_output("vpc_id"),  # required by AWS when target_type is "ip"
+                vpc_id=backend.get_output(
+                    "vpc_id"
+                ),  # required by AWS when target_type is "ip"
             )
             if name_prefix
             else None
@@ -253,7 +272,11 @@ def make_web_service(
             ),
             awsx.lb.ListenerArgs(
                 certificate_arn=certificate_arn,
-                default_actions=[aws.lb.ListenerDefaultActionArgs(type="forward", target_group_arn=target_group.arn)],
+                default_actions=[
+                    aws.lb.ListenerDefaultActionArgs(
+                        type="forward", target_group_arn=target_group.arn
+                    )
+                ],
                 port=443,
                 protocol="HTTPS",
             ),
@@ -328,7 +351,9 @@ def make_web_service(
             cluster=cluster.arn,
             load_balancers=[
                 aws.ecs.ServiceLoadBalancerArgs(
-                    container_name="container", container_port=container_port, target_group_arn=target_group.arn
+                    container_name="container",
+                    container_port=container_port,
+                    target_group_arn=target_group.arn,
                 )
             ],
             network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(
@@ -336,7 +361,9 @@ def make_web_service(
                 security_groups=[security_group.id],
             ),
             task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
-                execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(role_arn=execution_role.arn),
+                execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(
+                    role_arn=execution_role.arn
+                ),
                 container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                     name="container",
                     image=image.image_uri,
@@ -344,7 +371,9 @@ def make_web_service(
                     memory=memory,
                     essential=True,
                     port_mappings=[
-                        awsx.ecs.TaskDefinitionPortMappingArgs(container_port=container_port, host_port=container_port)
+                        awsx.ecs.TaskDefinitionPortMappingArgs(
+                            container_port=container_port, host_port=container_port
+                        )
                     ],
                     environment=environment,
                     secrets=secrets,

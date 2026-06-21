@@ -24,7 +24,9 @@ PROTECT = pulumi.ResourceOptions(protect=True)
 current = aws.get_caller_identity()
 SSO_INSTANCE_ARN = "arn:aws:sso:::instance/ssoins-7223f32c906c0e43"
 IDENTITY_STORE_ID = "d-9067e48f13"
-ADMIN_PERMISSION_SET_ARN = "arn:aws:sso:::permissionSet/ssoins-7223f32c906c0e43/ps-b3926ef4b0a5a823"
+ADMIN_PERMISSION_SET_ARN = (
+    "arn:aws:sso:::permissionSet/ssoins-7223f32c906c0e43/ps-b3926ef4b0a5a823"
+)
 ADMIN_GROUP_ID = "e41874c8-4001-7040-95a9-752f12a811e4"
 SKEARNES_SSO_USER_ID = "c49804b8-60c1-704d-2101-d67a4f3f1a04"
 ORG_MANAGEMENT_ACCOUNT_ID = "817965877148"
@@ -62,7 +64,9 @@ org_account_access_role = aws.iam.Role(
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Principal": {"AWS": f"arn:aws:iam::{ORG_MANAGEMENT_ACCOUNT_ID}:root"},
+                    "Principal": {
+                        "AWS": f"arn:aws:iam::{ORG_MANAGEMENT_ACCOUNT_ID}:root"
+                    },
                     "Action": "sts:AssumeRole",
                 },
             ],

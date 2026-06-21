@@ -44,9 +44,13 @@ cluster_security_group = aws.ec2.SecurityGroup(
     vpc_id=vpc.vpc_id,
 )
 
-cluster_subnet_group = aws.rds.SubnetGroup("cluster_subnet_group", subnet_ids=vpc.private_subnet_ids)
+cluster_subnet_group = aws.rds.SubnetGroup(
+    "cluster_subnet_group", subnet_ids=vpc.private_subnet_ids
+)
 
-rds_password = random.RandomPassword("rds_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?")
+rds_password = random.RandomPassword(
+    "rds_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?"
+)
 
 # Random suffix for the final snapshot name: stable in state (no per-run drift),
 # and regenerated if the cluster is ever recreated, so a second teardown can't
@@ -68,7 +72,9 @@ cluster = aws.rds.Cluster(
     # taken if the cluster is ever deleted anyway.
     deletion_protection=True,
     skip_final_snapshot=False,
-    final_snapshot_identifier=pulumi.Output.concat("cluster-final-snapshot-", final_snapshot_suffix.hex),
+    final_snapshot_identifier=pulumi.Output.concat(
+        "cluster-final-snapshot-", final_snapshot_suffix.hex
+    ),
     storage_encrypted=True,
     # Automated backups: 30 days of continuous point-in-time recovery. The retention
     # period is the TTL — backups older than 30 days auto-expire. Storage is free up
@@ -92,7 +98,9 @@ cluster = aws.rds.Cluster(
 rds_password_secret = aws.secretsmanager.Secret("rds_password")
 aws.secretsmanager.SecretVersion(
     "rds_password_secret_version",
-    aws.secretsmanager.SecretVersionArgs(secret_id=rds_password_secret.id, secret_string=rds_password.result),
+    aws.secretsmanager.SecretVersionArgs(
+        secret_id=rds_password_secret.id, secret_string=rds_password.result
+    ),
 )
 rds_dsn_secret = aws.secretsmanager.Secret("rds_dsn")
 aws.secretsmanager.SecretVersion(
@@ -100,7 +108,9 @@ aws.secretsmanager.SecretVersion(
     aws.secretsmanager.SecretVersionArgs(
         secret_id=rds_dsn_secret.id,
         secret_string=pulumi.Output.format(
-            "postgresql+psycopg://ord:{0}@{1}:5432/app", rds_password.result, cluster.endpoint
+            "postgresql+psycopg://ord:{0}@{1}:5432/app",
+            rds_password.result,
+            cluster.endpoint,
         ),
     ),
 )
@@ -111,12 +121,17 @@ aws.secretsmanager.SecretVersion(
 # secrets consumers read. The master (read-write) credentials above are reserved
 # for authorized writes.
 readonly_password = random.RandomPassword(
-    "readonly_password", length=16, special=True, override_special="!#$%&*()-_=+[]{}<>:?"
+    "readonly_password",
+    length=16,
+    special=True,
+    override_special="!#$%&*()-_=+[]{}<>:?",
 )
 rds_ro_password_secret = aws.secretsmanager.Secret("rds_ro_password")
 aws.secretsmanager.SecretVersion(
     "rds_ro_password_secret_version",
-    aws.secretsmanager.SecretVersionArgs(secret_id=rds_ro_password_secret.id, secret_string=readonly_password.result),
+    aws.secretsmanager.SecretVersionArgs(
+        secret_id=rds_ro_password_secret.id, secret_string=readonly_password.result
+    ),
 )
 rds_ro_dsn_secret = aws.secretsmanager.Secret("rds_ro_dsn")
 aws.secretsmanager.SecretVersion(
@@ -195,7 +210,9 @@ aws.iam.RolePolicyAttachment(
     role=bastion_role.name,
     policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
 )
-bastion_instance_profile = aws.iam.InstanceProfile("bastion_instance_profile", role=bastion_role.name)
+bastion_instance_profile = aws.iam.InstanceProfile(
+    "bastion_instance_profile", role=bastion_role.name
+)
 
 bastion_security_group = aws.ec2.SecurityGroup(
     "bastion_security_group",
@@ -324,10 +341,15 @@ aws.iam.RolePolicy(
     "dev_vm_secrets",
     role=dev_vm_role.id,
     policy=pulumi.Output.all(
-        rds_password_secret.arn, rds_dsn_secret.arn, rds_ro_password_secret.arn, rds_ro_dsn_secret.arn
+        rds_password_secret.arn,
+        rds_dsn_secret.arn,
+        rds_ro_password_secret.arn,
+        rds_ro_dsn_secret.arn,
     ).apply(_secrets_read_policy),  # ty: ignore[missing-argument, invalid-argument-type]
 )
-dev_vm_instance_profile = aws.iam.InstanceProfile("dev_vm_instance_profile", role=dev_vm_role.name)
+dev_vm_instance_profile = aws.iam.InstanceProfile(
+    "dev_vm_instance_profile", role=dev_vm_role.name
+)
 
 dev_vm_ami_id = aws.ssm.get_parameter_output(
     name="/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
@@ -340,7 +362,9 @@ dev_vm = aws.ec2.Instance(
     iam_instance_profile=dev_vm_instance_profile.name,
     subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
     vpc_security_group_ids=[dev_vm_security_group.id],
-    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(volume_size=50, volume_type="gp3"),
+    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
+        volume_size=50, volume_type="gp3"
+    ),
     tags={"Name": "dev-vm"},
     # Both ami and instance_type are ignored so routine deploys leave the VM alone:
     # it holds in-progress dataset work on its root volume and is resized by hand
@@ -367,7 +391,8 @@ pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
 pulumi.export("rds_ro_password_secret_arn", rds_ro_password_secret.arn)
 pulumi.export("rds_ro_dsn_secret_arn", rds_ro_dsn_secret.arn)
-pulumi.export("redis_endpoint", redis.endpoints.apply(lambda endpoints: endpoints[0]["address"]))  # ty: ignore[missing-argument, invalid-argument-type]
+redis_address = redis.endpoints.apply(lambda endpoints: endpoints[0]["address"])  # ty: ignore[missing-argument, invalid-argument-type]
+pulumi.export("redis_endpoint", redis_address)
 pulumi.export("bastion_instance_id", bastion.id)
 pulumi.export("dev_vm_instance_id", dev_vm.id)
 pulumi.export("instance_connect_endpoint_id", instance_connect_endpoint.id)

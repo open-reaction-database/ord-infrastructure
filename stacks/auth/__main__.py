@@ -78,7 +78,9 @@ management_api = auth0.Client(
     oidc_conformant=True,
     is_first_party=True,
     custom_login_page_on=True,
-    jwt_configuration=auth0.ClientJwtConfigurationArgs(alg="RS256", secret_encoded=False),
+    jwt_configuration=auth0.ClientJwtConfigurationArgs(
+        alg="RS256", secret_encoded=False
+    ),
     opts=pulumi.ResourceOptions(protect=True),
 )
 

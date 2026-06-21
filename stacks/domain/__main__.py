@@ -76,7 +76,9 @@ records = []
 wildcard_records = []
 
 
-def create_records(options: Sequence[aws.acm.outputs.CertificateDomainValidationOption], wildcard: bool) -> None:
+def create_records(
+    options: Sequence[aws.acm.outputs.CertificateDomainValidationOption], wildcard: bool
+) -> None:
     for i, value in enumerate(options):
         if wildcard:
             name = f"wildcard-record-{i}"
@@ -103,15 +105,20 @@ def create_records(options: Sequence[aws.acm.outputs.CertificateDomainValidation
 
 # NOTE(skearnes): If you have trouble with domain validation, make sure that the
 # hosted zone NS records match the name servers for the registered domain (or vice versa).
-certificate = aws.acm.Certificate("certificate", domain_name=DOMAIN, validation_method="DNS")
+certificate = aws.acm.Certificate(
+    "certificate", domain_name=DOMAIN, validation_method="DNS"
+)
 certificate.domain_validation_options.apply(partial(create_records, wildcard=False))  # ty: ignore[missing-argument, invalid-argument-type]
 certificate_validation = aws.acm.CertificateValidation(
     "certificate_validation",
     certificate_arn=certificate.arn,
     validation_record_fqdns=[record.fqdn for record in records],
 )
-wildcard_certificate = aws.acm.Certificate("wildcard_certificate", domain_name=f"*.{DOMAIN}", validation_method="DNS")
-wildcard_certificate.domain_validation_options.apply(partial(create_records, wildcard=True))  # ty: ignore[missing-argument, invalid-argument-type]
+wildcard_certificate = aws.acm.Certificate(
+    "wildcard_certificate", domain_name=f"*.{DOMAIN}", validation_method="DNS"
+)
+wildcard_options = wildcard_certificate.domain_validation_options
+wildcard_options.apply(partial(create_records, wildcard=True))  # ty: ignore[missing-argument, invalid-argument-type]
 wildcard_certificate_validation = aws.acm.CertificateValidation(
     "wildcard_certificate_validation",
     certificate_arn=wildcard_certificate.arn,
@@ -149,6 +156,8 @@ aws.route53.Record(
 )
 
 pulumi.export("certificate_arn", certificate_validation.certificate_arn)
-pulumi.export("wildcard_certificate_arn", wildcard_certificate_validation.certificate_arn)
+pulumi.export(
+    "wildcard_certificate_arn", wildcard_certificate_validation.certificate_arn
+)
 pulumi.export("domain_name", DOMAIN)
 pulumi.export("zone_id", zone.zone_id)
