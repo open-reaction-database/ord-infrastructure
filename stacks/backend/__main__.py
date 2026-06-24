@@ -194,6 +194,9 @@ cluster_instance = aws.rds.ClusterInstance(
     # Let AWS apply minor (16.x) patches automatically; the cluster pins only the
     # major version, so these don't fight the IaC config.
     auto_minor_version_upgrade=True,
+    # Apply instance modifications (e.g. class changes) at once rather than queuing
+    # them for the maintenance window, matching the cluster's apply_immediately.
+    apply_immediately=True,
     opts=pulumi.ResourceOptions(protect=True),
 )
 
