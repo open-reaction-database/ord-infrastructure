@@ -66,6 +66,9 @@ cluster_parameter_group = aws.rds.ClusterParameterGroup(
     # Parameter-group names must be lowercase/hyphenated; name_prefix lets the
     # group be replaced without a name collision.
     name_prefix="ord-cluster-",
+    # family must match the cluster's PostgreSQL major version (currently 16). A
+    # major-version upgrade requires bumping this and replacing the group (clear
+    # protect below first), or association will fail with a family mismatch.
     family="aurora-postgresql16",
     description="ORD cluster parameters (SSD-appropriate planner costs).",
     parameters=[
@@ -75,6 +78,9 @@ cluster_parameter_group = aws.rds.ClusterParameterGroup(
             apply_method="immediate",
         ),
     ],
+    # Consistent with the cluster/instance: surface accidental removal as a Pulumi
+    # guardrail rather than an AWS in-use error.
+    opts=pulumi.ResourceOptions(protect=True),
 )
 
 cluster = aws.rds.Cluster(
