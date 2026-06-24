@@ -5,11 +5,24 @@ Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, Redis,
 ## Database sizing
 
 The cluster runs a **provisioned** instance (not Serverless v2), and the instance
-class is chosen for **RAM, not CPU**. The interface's structure search uses the
-RDKit GiST indexes — `rdkit.mol_index` (~510 MB) and `rdkit.morgan_bfp_index`
-(~166 MB), ~676 MB combined — and substructure/similarity queries are fast only
-when those indexes stay resident in the buffer cache. If they don't fit, every
-query re-reads ~hundreds of MB from storage.
+class is chosen for **RAM, not CPU**: structure search is fast only when its working
+set stays resident in the buffer cache, otherwise queries re-read it from storage.
+That working set is bigger than just the RDKit predicate indexes:
+
+- The **RDKit GiST indexes** — `rdkit.mol_index` (~510 MB) and `rdkit.morgan_bfp_index`
+  (~166 MB) — which the substructure/similarity predicates scan.
+- The **btree indexes the joins walk** — `compound_pkey` (~744 MB),
+  `ix_ord_compound_reaction_input_id` (~580 MB), `ix_ord_compound_rdkit_mol_id`
+  (~242 MB), `reaction_input_pkey` (~232 MB), … — so **~2.5 GB of indexes participate
+  in a single component search.** The GiST indexes get scanned (mostly hot); the
+  btrees are point-looked-up, so only a fraction is hot per *selective* query — but
+  under mixed/concurrent load the hot set climbs toward that full 2.5 GB.
+- The **stats queries** (`most_used_smiles`) additionally scan a large slice of the
+  ~1.6 GB `compound` heap and its indexes.
+
+(The DB has ~15 GB of indexes total, but most — `compound_identifier`, `amount`,
+person/date records, and the 7 GB `reaction` heap of proto blobs — are cold for
+search; only the above is hot.)
 
 This bit us: the cluster was once Serverless v2 capped at `max_capacity=1` ACU
 (~2 GB RAM → 256 MB `shared_buffers`). The index set was 2× the cache, so
@@ -22,14 +35,16 @@ serverless scale-to-zero bought nothing. Switching to a provisioned instance mad
 Sizing guidance:
 
 - Aurora sets `shared_buffers` to ~60 % of instance RAM. Pick a class whose
-  `shared_buffers` comfortably exceeds the index set **plus** headroom for hot heap
-  pages, `work_mem`, and connections.
-- Current: **`db.t4g.medium`** (4 GB → ~2.4 GB `shared_buffers`). The index set is
-  growing as datasets load, so watch the `FreeableMemory` and buffer cache-hit
-  CloudWatch metrics and **size up** (`db.t4g.large`, then `db.r7g.large` for
-  dedicated CPU) if memory gets tight. `t4g.*` all have 2 vCPU, so stepping between
-  them trades only RAM, and a class change is an in-place compute swap (data lives
-  in the shared cluster volume — no data move).
+  `shared_buffers` comfortably exceeds the working set above **plus** headroom for
+  hot heap pages, `work_mem`, and connections.
+- Current: **`db.t4g.large`** (8 GB → ~4.8 GB `shared_buffers`). This holds the
+  ~2.5 GB index working set with room as the data grows. `db.t4g.medium` (4 GB →
+  ~2 GB) was tried but is too tight — it fits the GiST predicate index and serves
+  selective searches (~160 ms warm), but the full working set exceeds its cache, so
+  mixed/concurrent load (especially stats queries) would thrash. Size up to
+  `db.r7g.large` for dedicated (non-burstable) CPU if recheck-heavy load grows.
+  `t4g.*` all have 2 vCPU, so stepping between them trades only RAM, and a class
+  change is an in-place compute swap (data lives in the shared cluster volume).
 - Reserved instances apply only to provisioned classes (not Serverless v2 ACUs) and
   cut ~25 % off at 1 year; buy one once the class is settled.
 
