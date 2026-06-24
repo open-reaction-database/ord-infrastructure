@@ -57,12 +57,30 @@ rds_password = random.RandomPassword(
 # collide with a leftover snapshot from the first.
 final_snapshot_suffix = random.RandomId("final_snapshot_suffix", byte_length=4)
 
+# Custom cluster parameters. random_page_cost defaults to 4 (spinning-disk era);
+# Aurora storage is SSD-backed, so 1.1 stops the planner over-penalizing index
+# scans relative to sequential scans -- important for the RDKit GiST substructure
+# and fingerprint indexes. Dynamic parameter, applied without a reboot.
+cluster_parameter_group = aws.rds.ClusterParameterGroup(
+    "cluster_parameter_group",
+    family="aurora-postgresql16",
+    description="ORD cluster parameters (SSD-appropriate planner costs).",
+    parameters=[
+        aws.rds.ClusterParameterGroupParameterArgs(
+            name="random_page_cost",
+            value="1.1",
+            apply_method="immediate",
+        ),
+    ],
+)
+
 cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
     apply_immediately=True,
     database_name="ord",
     db_subnet_group_name=cluster_subnet_group.name,
+    db_cluster_parameter_group_name=cluster_parameter_group.name,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
     engine_mode=aws.rds.EngineMode.PROVISIONED,
     master_username="ord",
@@ -85,10 +103,15 @@ cluster = aws.rds.Cluster(
     preferred_backup_window="07:00-08:00",
     preferred_maintenance_window="sun:05:00-sun:06:00",
     copy_tags_to_snapshot=True,
+    # The RDKit GiST indexes (~510 MB mol_index + ~166 MB morgan_bfp_index) must
+    # stay resident in the buffer cache for substructure/similarity search to be
+    # fast; otherwise each query re-reads the index from storage (~12-21 s observed
+    # at 1 ACU). min_capacity keeps a warm floor (no auto-pause); max_capacity lets
+    # search bursts scale up. See the PR for the cost analysis and the provisioned
+    # alternative.
     serverlessv2_scaling_configuration=aws.rds.ClusterServerlessv2ScalingConfigurationArgs(
-        min_capacity=0,
-        max_capacity=1,
-        seconds_until_auto_pause=3600,
+        min_capacity=2,
+        max_capacity=8,
     ),
     vpc_security_group_ids=[cluster_security_group.id],
     # Pulumi-side guardrail: refuse to delete even if the resource is removed from code.
