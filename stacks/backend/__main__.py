@@ -185,12 +185,12 @@ cluster_instance = aws.rds.ClusterInstance(
     cluster_identifier=cluster.id,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
     engine_version=cluster.engine_version,
-    # Provisioned Graviton instance (8 GB) so the RDKit search indexes (~676 MB)
-    # stay resident in the buffer cache. RAM is the binding constraint; t4g's
-    # burstable CPU suits the light/bursty search traffic. Data lives in the shared
-    # cluster volume, so changing the instance class is an in-place compute swap,
-    # not a data move -- bump to db.r7g.large if recheck-heavy load starves CPU.
-    instance_class="db.t4g.large",
+    # Provisioned Graviton instance (4 GB) so the RDKit search indexes (~676 MB)
+    # stay resident in the buffer cache -- RAM is the binding constraint. Changing
+    # the class is an in-place compute swap (data lives in the shared cluster
+    # volume). Size up (db.t4g.large, then db.r7g.large) if FreeableMemory runs low
+    # as the index set grows. See README "Database sizing" for the full rationale.
+    instance_class="db.t4g.medium",
     # Let AWS apply minor (16.x) patches automatically; the cluster pins only the
     # major version, so these don't fight the IaC config.
     auto_minor_version_upgrade=True,
