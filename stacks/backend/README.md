@@ -2,6 +2,43 @@
 
 Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, Redis, and a bastion for local DB access.
 
+## Database sizing
+
+The cluster runs a **provisioned** instance (not Serverless v2), and the instance
+class is chosen for **RAM, not CPU**. The interface's structure search uses the
+RDKit GiST indexes — `rdkit.mol_index` (~510 MB) and `rdkit.morgan_bfp_index`
+(~166 MB), ~676 MB combined — and substructure/similarity queries are fast only
+when those indexes stay resident in the buffer cache. If they don't fit, every
+query re-reads ~hundreds of MB from storage.
+
+This bit us: the cluster was once Serverless v2 capped at `max_capacity=1` ACU
+(~2 GB RAM → 256 MB `shared_buffers`). The index set was 2× the cache, so
+substructure queries ran **12–21 s, ~98% of it storage I/O** (confirmed with
+`EXPLAIN (ANALYZE, BUFFERS)`). The cluster also never idled (0 % over 90 days), so
+serverless scale-to-zero bought nothing. Switching to a provisioned instance made
+`shared_buffers` large enough to hold the indexes; the same query dropped to
+**~160 ms warm**.
+
+Sizing guidance:
+
+- Aurora sets `shared_buffers` to ~60 % of instance RAM. Pick a class whose
+  `shared_buffers` comfortably exceeds the index set **plus** headroom for hot heap
+  pages, `work_mem`, and connections.
+- Current: **`db.t4g.medium`** (4 GB → ~2.4 GB `shared_buffers`). The index set is
+  growing as datasets load, so watch the `FreeableMemory` and buffer cache-hit
+  CloudWatch metrics and **size up** (`db.t4g.large`, then `db.r7g.large` for
+  dedicated CPU) if memory gets tight. `t4g.*` all have 2 vCPU, so stepping between
+  them trades only RAM, and a class change is an in-place compute swap (data lives
+  in the shared cluster volume — no data move).
+- Reserved instances apply only to provisioned classes (not Serverless v2 ACUs) and
+  cut ~25 % off at 1 year; buy one once the class is settled.
+
+Cold starts: `survivable_cache_mode` is on, so the buffer cache survives normal DB
+restarts (including most minor-version upgrades). The cache is only lost on
+**instance replacement** (class change, major upgrade, hardware failure), after
+which the first substructure query is slow (~40 s) until the index re-warms, then
+back to ~160 ms. These events are rare, so we don't run `pg_prewarm`/autoprewarm.
+
 ## Connecting to RDS from a local client (DataGrip, psql, etc.)
 
 The RDS cluster has no public endpoint. A `t4g.nano` bastion in a private subnet forwards traffic to it via AWS Systems Manager — no SSH, no public IP, no inbound ports. Access is gated by IAM.
