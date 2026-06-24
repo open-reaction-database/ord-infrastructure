@@ -57,13 +57,49 @@ rds_password = random.RandomPassword(
 # collide with a leftover snapshot from the first.
 final_snapshot_suffix = random.RandomId("final_snapshot_suffix", byte_length=4)
 
+# Custom cluster parameters. random_page_cost defaults to 4 (spinning-disk era);
+# Aurora storage is SSD-backed, so 1.1 stops the planner over-penalizing index
+# scans relative to sequential scans -- important for the RDKit GiST substructure
+# and fingerprint indexes. Dynamic parameter, applied without a reboot.
+# Single source of truth for the PostgreSQL major version: the cluster pins this
+# as its engine_version (major only, so AWS minor auto-upgrades still apply without
+# drift) and the parameter group derives its family from it, so the two can't fall
+# out of sync. A major-version upgrade is a one-line change here (plus replacing the
+# protected parameter group).
+POSTGRES_MAJOR = "16"
+
+cluster_parameter_group = aws.rds.ClusterParameterGroup(
+    "cluster_parameter_group",
+    # Parameter-group names must be lowercase/hyphenated; name_prefix lets the
+    # group be replaced without a name collision.
+    name_prefix="ord-cluster-",
+    family=f"aurora-postgresql{POSTGRES_MAJOR}",
+    description="ORD cluster parameters (SSD-appropriate planner costs).",
+    parameters=[
+        aws.rds.ClusterParameterGroupParameterArgs(
+            name="random_page_cost",
+            value="1.1",
+            apply_method="immediate",
+        ),
+    ],
+    # Consistent with the cluster/instance: surface accidental removal as a Pulumi
+    # guardrail rather than an AWS in-use error.
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
 cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
     apply_immediately=True,
     database_name="ord",
     db_subnet_group_name=cluster_subnet_group.name,
+    db_cluster_parameter_group_name=cluster_parameter_group.name,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
+    # Major version only, so the parameter group family stays in lockstep while AWS
+    # minor auto-upgrades (16.x) still flow. After the first apply this stabilizes
+    # (state stores "16"; the running minor surfaces via engine_version_actual), so
+    # there's no perpetual diff -- the trap you'd hit by pinning a full "16.11".
+    engine_version=POSTGRES_MAJOR,
     engine_mode=aws.rds.EngineMode.PROVISIONED,
     master_username="ord",
     master_password=rds_password.result,
@@ -85,11 +121,6 @@ cluster = aws.rds.Cluster(
     preferred_backup_window="07:00-08:00",
     preferred_maintenance_window="sun:05:00-sun:06:00",
     copy_tags_to_snapshot=True,
-    serverlessv2_scaling_configuration=aws.rds.ClusterServerlessv2ScalingConfigurationArgs(
-        min_capacity=0,
-        max_capacity=1,
-        seconds_until_auto_pause=3600,
-    ),
     vpc_security_group_ids=[cluster_security_group.id],
     # Pulumi-side guardrail: refuse to delete even if the resource is removed from code.
     opts=pulumi.ResourceOptions(protect=True),
@@ -154,7 +185,15 @@ cluster_instance = aws.rds.ClusterInstance(
     cluster_identifier=cluster.id,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
     engine_version=cluster.engine_version,
-    instance_class="db.serverless",
+    # Provisioned Graviton instance (8 GB) so the RDKit search indexes (~676 MB)
+    # stay resident in the buffer cache. RAM is the binding constraint; t4g's
+    # burstable CPU suits the light/bursty search traffic. Data lives in the shared
+    # cluster volume, so changing the instance class is an in-place compute swap,
+    # not a data move -- bump to db.r7g.large if recheck-heavy load starves CPU.
+    instance_class="db.t4g.large",
+    # Let AWS apply minor (16.x) patches automatically; the cluster pins only the
+    # major version, so these don't fight the IaC config.
+    auto_minor_version_upgrade=True,
     opts=pulumi.ResourceOptions(protect=True),
 )
 
