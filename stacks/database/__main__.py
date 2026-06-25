@@ -35,6 +35,14 @@ TUNNEL_PORT = 15432
 DATABASES = ["app", "ord", "editor", "app_staging"]
 PROD_DATABASES = {"app", "ord", "editor"}
 
+# Every database exposes readable tables in public; the readonly role is granted
+# there for all of them. The ord search database additionally keeps tables in two
+# non-public schemas — ord-schema's ORM tables in `ord` and the RDKit cartridge
+# tables in `rdkit` — so the role needs USAGE + SELECT on those too. The
+# Alembic-managed app databases (app, app_staging) and the editor database use
+# public only.
+EXTRA_READONLY_SCHEMAS = {"ord": ["ord", "rdkit"]}
+
 # Credentials come from the secrets the backend stack manages: the master user to
 # connect as, and the generated password the `readonly` role should have.
 master_password = aws.secretsmanager.get_secret_version_output(
@@ -106,6 +114,51 @@ readonly = postgresql.Role(
     ),
 )
 
+
+def grant_schema_read(name_prefix: str, db: str, schema: str, opts) -> None:
+    """Grants the readonly role USAGE + SELECT (current and future tables) on a schema.
+
+    Args:
+        name_prefix: Prefix for the Pulumi resource names. `public` uses the bare
+            database name to preserve existing resource URNs; other schemas qualify
+            it with the schema name.
+        db: Database the grants apply to.
+        schema: Schema to grant on.
+        opts: Resource options carrying the database's provider and dependencies.
+    """
+    postgresql.Grant(
+        f"{name_prefix}_usage",
+        database=db,
+        schema=schema,
+        role=readonly.name,
+        object_type="schema",
+        privileges=["USAGE"],
+        opts=opts,
+    )
+    postgresql.Grant(
+        f"{name_prefix}_select",
+        database=db,
+        schema=schema,
+        role=readonly.name,
+        object_type="table",
+        objects=[],  # empty list = all tables currently in the schema
+        privileges=["SELECT"],
+        opts=opts,
+    )
+    # Future tables created by the master user are readable too, so loads don't
+    # silently leave the readonly role unable to see new tables.
+    postgresql.DefaultPrivileges(
+        f"{name_prefix}_select_future",
+        database=db,
+        schema=schema,
+        owner="ord",
+        role=readonly.name,
+        object_type="table",
+        privileges=["SELECT"],
+        opts=opts,
+    )
+
+
 for db, provider in providers.items():
     opts = pulumi.ResourceOptions(
         provider=provider, depends_on=[readonly, databases[db]]
@@ -118,34 +171,6 @@ for db, provider in providers.items():
         privileges=["CONNECT"],
         opts=opts,
     )
-    postgresql.Grant(
-        f"{db}_usage",
-        database=db,
-        schema="public",
-        role=readonly.name,
-        object_type="schema",
-        privileges=["USAGE"],
-        opts=opts,
-    )
-    postgresql.Grant(
-        f"{db}_select",
-        database=db,
-        schema="public",
-        role=readonly.name,
-        object_type="table",
-        objects=[],  # empty list = all tables currently in the schema
-        privileges=["SELECT"],
-        opts=opts,
-    )
-    # Future tables created by the master user are readable too, so loads don't
-    # silently leave the readonly role unable to see new tables.
-    postgresql.DefaultPrivileges(
-        f"{db}_select_future",
-        database=db,
-        schema="public",
-        owner="ord",
-        role=readonly.name,
-        object_type="table",
-        privileges=["SELECT"],
-        opts=opts,
-    )
+    grant_schema_read(db, db, "public", opts)
+    for schema in EXTRA_READONLY_SCHEMAS.get(db, []):
+        grant_schema_read(f"{db}_{schema}", db, schema, opts)
