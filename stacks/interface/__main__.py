@@ -30,6 +30,13 @@ gh_arn = github_client_secret.arn
 gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[missing-argument, invalid-argument-type]
 gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
 
+# Anthropic API key for the natural-language search endpoint. The secret value (the raw
+# key) is set out of band -- e.g. `aws secretsmanager put-secret-value` -- and is never
+# stored in Pulumi state or git, mirroring github-client above.
+anthropic_api_key_secret = aws.secretsmanager.Secret(
+    "anthropic_api_key_secret", name="anthropic-api-key"
+)
+
 make_web_service(
     backend=backend,
     domain=domain,
@@ -41,6 +48,7 @@ make_web_service(
     secret_arns=[
         backend.get_output("rds_password_secret_arn"),
         github_client_secret.arn,
+        anthropic_api_key_secret.arn,
     ],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(
@@ -65,6 +73,10 @@ make_web_service(
         awsx.ecs.TaskDefinitionSecretArgs(
             name="GH_CLIENT_SECRET",
             value_from=gh_client_secret,
+        ),
+        awsx.ecs.TaskDefinitionSecretArgs(
+            name="ANTHROPIC_API_KEY",
+            value_from=anthropic_api_key_secret.arn,
         ),
     ],
     cluster_name="interface",
