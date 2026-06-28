@@ -14,3 +14,5 @@
 
 config:
   aws:region: us-east-1
+  interface:anthropic_api_key:
+    secure: AAABAKzOHEEnCroQrMBUMqm4AzdZeg8vNY9zBMsz2A/+Bj/A85BSLhDHEykGg5KGrIOcR3DIOh5tGDZB4KqrXuhf7mpfC9cK+i/gSGGZ49z+ekThFhco4FmYzzp5xki2okf8Fbo+lQDQTZnIVbLoq7Figb7pewpJ1H5dRkf0dlVHSocYGC5xB5TPz1A=
