@@ -177,6 +177,7 @@ def make_web_service(
     cpu: int = 4096,
     memory: int = 8192,
     cluster_name: str | None = None,
+    depends_on: Sequence[pulumi.Resource] | None = None,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind an ALB.
 
@@ -217,6 +218,8 @@ def make_web_service(
         cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
             "interface") so clusters are distinguishable in the console. None
             auto-generates a "cluster-*" name. Changing it replaces the cluster.
+        depends_on: Resources the service must be created after — e.g. a
+            SecretVersion that must hold a value before a task resolves its secrets.
 
     Returns:
         The created FargateService.
@@ -347,7 +350,8 @@ def make_web_service(
 
     return awsx.ecs.FargateService(
         "service",
-        awsx.ecs.FargateServiceArgs(
+        opts=pulumi.ResourceOptions(depends_on=depends_on),
+        args=awsx.ecs.FargateServiceArgs(
             cluster=cluster.arn,
             load_balancers=[
                 aws.ecs.ServiceLoadBalancerArgs(

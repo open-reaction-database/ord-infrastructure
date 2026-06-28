@@ -41,7 +41,7 @@ anthropic_api_key = config.require_secret("anthropic_api_key")
 anthropic_api_key_secret = aws.secretsmanager.Secret(
     "anthropic_api_key_secret", name="ord-interface-anthropic-api-key"
 )
-aws.secretsmanager.SecretVersion(
+anthropic_api_key_version = aws.secretsmanager.SecretVersion(
     "anthropic_api_key_version",
     secret_id=anthropic_api_key_secret.id,
     secret_string=anthropic_api_key,
@@ -90,4 +90,7 @@ make_web_service(
         ),
     ],
     cluster_name="interface",
+    # Create the secret's first version before the service, so a fresh deploy never
+    # starts a task against a versionless secret (which would fail to resolve).
+    depends_on=[anthropic_api_key_version],
 )
