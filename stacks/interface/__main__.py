@@ -31,11 +31,21 @@ gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[m
 gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
 
 # Anthropic API key for the natural-language search endpoint. Named per-service so other
-# services can have their own keys later. The secret value (the raw key) is set out of
-# band -- e.g. `aws secretsmanager put-secret-value` -- and is never stored in Pulumi
-# state or git, mirroring github-client above.
+# services can have their own keys later.
 anthropic_api_key_secret = aws.secretsmanager.Secret(
     "anthropic_api_key_secret", name="ord-interface-anthropic-api-key"
+)
+# Seed a placeholder version so the secret resolves on the very first deploy: an empty
+# secret would fail the ECS `secrets` lookup and stop tasks from starting. The real key
+# is set out of band (`aws secretsmanager put-secret-value`) and never stored in Pulumi
+# state or git; ignore_changes keeps Pulumi from reverting it. The app treats this
+# placeholder like any invalid key -- /nl_query returns 503 until the real value is set,
+# while the rest of the service starts normally.
+aws.secretsmanager.SecretVersion(
+    "anthropic_api_key_placeholder",
+    secret_id=anthropic_api_key_secret.id,
+    secret_string="REPLACE_ME_VIA_PUT_SECRET_VALUE",
+    opts=pulumi.ResourceOptions(ignore_changes=["secret_string"]),
 )
 
 make_web_service(
