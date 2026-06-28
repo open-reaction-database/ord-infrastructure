@@ -30,6 +30,19 @@ gh_arn = github_client_secret.arn
 gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[missing-argument, invalid-argument-type]
 gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
 
+# Anthropic API key for the natural-language search endpoint, named per-service so other
+# services can have their own keys. The value is an encrypted Pulumi config secret.
+config = pulumi.Config()
+anthropic_api_key = config.require_secret("anthropic_api_key")
+anthropic_api_key_secret = aws.secretsmanager.Secret(
+    "anthropic_api_key_secret", name="ord-interface-anthropic-api-key"
+)
+anthropic_api_key_version = aws.secretsmanager.SecretVersion(
+    "anthropic_api_key_version",
+    secret_id=anthropic_api_key_secret.id,
+    secret_string=anthropic_api_key,
+)
+
 make_web_service(
     backend=backend,
     domain=domain,
@@ -41,6 +54,7 @@ make_web_service(
     secret_arns=[
         backend.get_output("rds_password_secret_arn"),
         github_client_secret.arn,
+        anthropic_api_key_secret.arn,
     ],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(
@@ -66,6 +80,13 @@ make_web_service(
             name="GH_CLIENT_SECRET",
             value_from=gh_client_secret,
         ),
+        awsx.ecs.TaskDefinitionSecretArgs(
+            name="ANTHROPIC_API_KEY",
+            value_from=anthropic_api_key_secret.arn,
+        ),
     ],
     cluster_name="interface",
+    # Create the secret's first version before the service, so a fresh deploy never
+    # starts a task against a versionless secret (which would fail to resolve).
+    depends_on=[anthropic_api_key_version],
 )
