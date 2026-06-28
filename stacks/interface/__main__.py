@@ -30,11 +30,12 @@ gh_arn = github_client_secret.arn
 gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[missing-argument, invalid-argument-type]
 gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
 
-# Anthropic API key for the natural-language search endpoint. The secret value (the raw
-# key) is set out of band -- e.g. `aws secretsmanager put-secret-value` -- and is never
-# stored in Pulumi state or git, mirroring github-client above.
+# Anthropic API key for the natural-language search endpoint. Named per-service so other
+# services can have their own keys later. The secret value (the raw key) is set out of
+# band -- e.g. `aws secretsmanager put-secret-value` -- and is never stored in Pulumi
+# state or git, mirroring github-client above.
 anthropic_api_key_secret = aws.secretsmanager.Secret(
-    "anthropic_api_key_secret", name="anthropic-api-key"
+    "anthropic_api_key_secret", name="ord-interface-anthropic-api-key"
 )
 
 make_web_service(
