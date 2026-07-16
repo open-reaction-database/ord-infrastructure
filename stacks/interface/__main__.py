@@ -61,7 +61,11 @@ make_web_service(
             name="POSTGRES_HOST", value=backend.get_output("rds_endpoint")
         ),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_USER", value="ord"),
-        awsx.ecs.TaskDefinitionKeyValuePairArgs(name="POSTGRES_DATABASE", value="ord"),
+        # The search database the API reads. Each ord-schema load lands in a fresh
+        # `ord_<date>` database; pointing here is what promotes one to serve traffic.
+        awsx.ecs.TaskDefinitionKeyValuePairArgs(
+            name="POSTGRES_DATABASE", value="ord_20260702"
+        ),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(
             name="REDIS_HOST", value=backend.get_output("redis_endpoint")
         ),

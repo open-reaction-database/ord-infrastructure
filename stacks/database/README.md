@@ -14,15 +14,16 @@ dependency is quarantined here, in the one stack that actually needs it.
 
 ## What it manages
 
-- The application **databases**: `app`, `ord`, and `editor` (imported and
-  `protect`ed — they predate IaC and hold data, so they're adopted in place, never
+- The application **databases**: `app`, `ord`, `ord_20260702`, and `editor`
+  (imported and `protect`ed — they hold data, so they're adopted in place, never
   recreated) plus `app_staging` (created here, for the staging app).
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
-  tables, across all four databases. The `ord` search database also keeps tables
-  in the `ord` (ord-schema ORM) and `rdkit` (cartridge) schemas, so the role gets
-  the same USAGE + SELECT there.
+  tables, across all five databases. The search databases also keep tables outside
+  `public`, so the role gets the same USAGE + SELECT there: `ord` (ord-schema ORM)
+  and `rdkit` (cartridge) for both, plus `derived` (generated SMILES and RDKit
+  links) for `ord_20260702`, which uses the 0.8 role-based schema layout.
 
 ## Deploying
 
@@ -53,3 +54,10 @@ New application databases aren't created here (the cluster auto-creates `ord`;
 others are created out-of-band). To extend the `readonly` grants to a new
 database, add its name to `DATABASES` in `__main__.py` and re-run `up` with the
 tunnel open.
+
+Because the database already exists, also add it to `IMPORT_DATABASES` so Pulumi
+adopts it in place instead of trying to create it, and to `PROD_DATABASES` if it
+holds data worth protecting. Check `preview` before running `up`: the plan must
+show `import` for the new database, never `replace` (a replace drops it). Remove
+the name from `IMPORT_DATABASES` after `up` records it in state. If the database
+keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
