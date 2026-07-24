@@ -38,8 +38,8 @@ PROD_DATABASES = {"app", "ord", "ord_20260702", "editor"}
 
 # Databases that already exist on the cluster and must be adopted in place rather than
 # created — a create would fail against the live database, and a replace would drop it.
-# Drop an entry once `up` has recorded the database in state.
-IMPORT_DATABASES = {"ord_20260702"}
+# Add a database here to adopt it, then drop it once `up` has recorded it in state.
+IMPORT_DATABASES = set()
 
 # Every database exposes readable tables in public; the readonly role is granted
 # there for all of them. The search databases additionally keep tables in non-public
