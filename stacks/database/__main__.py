@@ -29,19 +29,29 @@ backend = pulumi.StackReference("ord/backend/prod")
 TUNNEL_HOST = "localhost"
 TUNNEL_PORT = 15432
 
-# Every application database in the cluster. The production databases are protected;
-# app_staging is the disposable staging database. The read-only role is granted
-# across all of them.
-DATABASES = ["app", "ord", "editor", "app_staging"]
-PROD_DATABASES = {"app", "ord", "editor"}
+# Every application database in the cluster. The databases holding real data are
+# protected; app_staging is the disposable staging database. The read-only role is
+# granted across all of them. `ord_20260702` is the search database built by the
+# ord-schema 0.8 ORM pipeline, named for the date its load completed.
+DATABASES = ["app", "ord", "ord_20260702", "editor", "app_staging"]
+PROD_DATABASES = {"app", "ord", "ord_20260702", "editor"}
+
+# Databases that already exist on the cluster and must be adopted in place rather than
+# created — a create would fail against the live database, and a replace would drop it.
+# Add a database here to adopt it, then drop it once `up` has recorded it in state.
+IMPORT_DATABASES = set()
 
 # Every database exposes readable tables in public; the readonly role is granted
-# there for all of them. The ord search database additionally keeps tables in two
-# non-public schemas — ord-schema's ORM tables in `ord` and the RDKit cartridge
-# tables in `rdkit` — so the role needs USAGE + SELECT on those too. The
-# Alembic-managed app databases (app, app_staging) and the editor database use
+# there for all of them. The search databases additionally keep tables in non-public
+# schemas, so the role needs USAGE + SELECT on those too: `ord` (ord-schema's ORM
+# tables) and `rdkit` (the cartridge). The 0.8 ORM splits these by role, adding
+# `derived` for generated SMILES and RDKit links; its payload tables live in public.
+# The Alembic-managed app databases (app, app_staging) and the editor database use
 # public only.
-EXTRA_READONLY_SCHEMAS = {"ord": ["ord", "rdkit"]}
+EXTRA_READONLY_SCHEMAS = {
+    "ord": ["ord", "rdkit"],
+    "ord_20260702": ["ord", "rdkit", "derived"],
+}
 
 # Credentials come from the secrets the backend stack manages: the master user to
 # connect as, and the generated password the `readonly` role should have.
@@ -85,8 +95,7 @@ maintenance_provider = postgresql.Provider(
 
 # Manage every application database. The pre-existing ones are imported and
 # protected so Pulumi adopts them in place without recreating (a replace would drop
-# the data); app_staging is created fresh. (They were adopted via `import_`, since
-# removed now that they're in state — see git history.)
+# the data); app_staging is created fresh.
 databases = {
     db: postgresql.Database(
         f"db_{db}",
@@ -98,6 +107,8 @@ databases = {
             # disposable test data, so leave it unprotected: retiring staging is
             # then just removing it here + `pulumi up`, with no unprotect step.
             protect=db in PROD_DATABASES,
+            # A database's import id is its name.
+            import_=db if db in IMPORT_DATABASES else None,
         ),
     )
     for db in DATABASES
