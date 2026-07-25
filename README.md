@@ -38,11 +38,21 @@ SSO credentials expire periodically — re-run `aws sso login` when Pulumi repor
 
 Each Pulumi project's `Pulumi.yaml` declares `runtime.options.virtualenv: venv`, so Pulumi auto-creates a per-project venv and installs `requirements.txt` (which is just `-e ../..`) on the first run. No manual venv setup needed.
 
-For lint/typecheck tools (ruff, ty) at the repo root:
+For lint/typecheck/test tools (ruff, ty, pytest) at the repo root:
 
 ```sh
 uv sync --locked   # installs ord_infrastructure + dev deps into .venv
 ```
+
+## Tests
+
+```sh
+uv run pytest
+```
+
+The suite covers the deploy-time guards in [`ord_infrastructure/shared.py`](ord_infrastructure/shared.py) — the sibling-repo cleanliness check, the image provenance stamp, and the ALB name-length limit — against throwaway git repositories. It needs no AWS credentials and no Pulumi runtime.
+
+The `stacks/` programs are not unit tested: they construct resources at import time, so `pulumi preview` is what validates them. Review the preview diff before every `up`.
 
 ## Deploying
 

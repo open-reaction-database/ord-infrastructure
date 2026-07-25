@@ -32,9 +32,17 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest>=9.0.3,<10",
     "ruff>=0.9.9",
     "ty>=0.0.28",
 ]
+
+[tool.pytest.ini_options]
+# Tests are colocated next to the code they exercise (shared.py + shared_test.py),
+# matching the sibling ord repos. The stacks/ programs are not collected: they build
+# resources at import time and need a Pulumi runtime, so `pulumi preview` covers them.
+testpaths = ["ord_infrastructure"]
+python_files = ["*_test.py"]
 
 [tool.hatch.build.targets.wheel]
 # Pulumi projects install this package via `-e ../..` in their requirements.txt
