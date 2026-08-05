@@ -23,13 +23,6 @@ from ord_infrastructure.shared import make_web_service
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
 
-github_client_secret = aws.secretsmanager.Secret(
-    "github_client_secret", name="github-client"
-)
-gh_arn = github_client_secret.arn
-gh_client_id = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_ID::")  # ty: ignore[missing-argument, invalid-argument-type]
-gh_client_secret = gh_arn.apply(lambda arn: f"{arn}:GH_CLIENT_SECRET::")  # ty: ignore[missing-argument, invalid-argument-type]
-
 # Anthropic API key for the natural-language search endpoint, named per-service so other
 # services can have their own keys. The value is an encrypted Pulumi config secret.
 config = pulumi.Config()
@@ -53,7 +46,6 @@ make_web_service(
     dockerfile="../../../ord-interface/ord_interface/Dockerfile",
     secret_arns=[
         backend.get_output("rds_password_secret_arn"),
-        github_client_secret.arn,
         anthropic_api_key_secret.arn,
     ],
     environment=[
@@ -75,14 +67,6 @@ make_web_service(
         awsx.ecs.TaskDefinitionSecretArgs(
             name="POSTGRES_PASSWORD",
             value_from=backend.get_output("rds_password_secret_arn"),
-        ),
-        awsx.ecs.TaskDefinitionSecretArgs(
-            name="GH_CLIENT_ID",
-            value_from=gh_client_id,
-        ),
-        awsx.ecs.TaskDefinitionSecretArgs(
-            name="GH_CLIENT_SECRET",
-            value_from=gh_client_secret,
         ),
         awsx.ecs.TaskDefinitionSecretArgs(
             name="ANTHROPIC_API_KEY",
