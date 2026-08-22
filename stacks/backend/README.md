@@ -170,12 +170,20 @@ a mistake would matter most.
 question, the query it became, what it cost, and how it ended. It never holds the
 reactions a query returned; the query and a corpus fingerprint reproduce those.
 
-Retention is **395 days**, expiring on a lifecycle rule. Thirteen months is a year plus a
-month of overlap, so this August can be compared against last August. The long window is
-sample size rather than sentiment: the log grows at the rate people ask questions, which
-is slow, and retention is the only dial that buys more of them. If volume or sensitivity
-grows, the answer is to expire the question text on a short clock while keeping the
-outcomes, usage, and fingerprints that carry the analysis — not to move this number.
+Retention runs on two clocks, because the two halves of a record age differently. The
+raw objects under `nl-log/raw/` hold what people typed and expire at **200 days**; the
+compacted months under `nl-log/parquet/`, which `nl_log.compact(redact=True)` writes with
+the free text emptied out, expire at **395 days**. The prefixes are disjoint rather than
+nested so no object matches both rules — S3 resolves overlapping lifecycle rules by its
+own precedence, and a design that has to be right about that precedence is one waiting to
+delete an archive.
+
+Compaction is what carries a month into the long tier, so the raw clock deliberately
+outlives it by a wide margin: at ninety days one missed run would be a silent permanent
+loss, and at two hundred three runs have to fail in a row before anything goes missing. Thirteen months is a year plus a month of
+overlap, so this August can be compared against last August. That window is sample size
+rather than sentiment: the log grows at the rate people ask questions, which
+is slow, and retention is the only dial that buys more of them.
 
 The dev VM can write and read the prefix, since that is where the eval harness runs. A
 served endpoint will want write access only, but nothing serves `ord_schema.search.nl`

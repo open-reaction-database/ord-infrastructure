@@ -449,16 +449,32 @@ aws.s3.BucketPublicAccessBlock(
     restrict_public_buckets=True,
 )
 
-# Where ord_schema.search.nl_log writes, one object per question.
+# Everything the question log holds, which is what access is granted over.
 QUESTION_LOG_PREFIX = "nl-log/"
-# Thirteen months: a year of questions plus a month of overlap, so this August can be
-# compared against last August. The long window is not sentiment about the data -- it is
-# sample size. The log accumulates at the rate people ask questions, which is slow, so a
-# 90-day window would hold too few to draw a conclusion from, and retention is the only
-# dial that buys more. Free text does not get to accumulate forever on top of that: if
-# volume or sensitivity grows, the move is to expire the question text on a short clock
-# while keeping the outcomes, usage, and fingerprints that carry the analysis -- not to
-# make this number bigger or smaller.
+# Where ord_schema.search.nl_log writes, one object per question, and where
+# nl_log.compact(redact=True) puts the months it folds them into. The two are separate
+# prefixes rather than one nested inside the other so that no object matches both rules
+# below: S3 resolves overlapping lifecycle rules by its own precedence, and a design
+# that has to be right about that precedence is a design waiting to delete an archive.
+QUESTION_LOG_RAW_PREFIX = "nl-log/raw/"
+QUESTION_LOG_ARCHIVE_PREFIX = "nl-log/parquet/"
+
+# Two tiers, because the two halves of a record age differently.
+#
+# The raw objects hold what people typed. That is the half worth retiring early: a
+# question is free text, and on this corpus it carries research intent -- what a chemist
+# is working on -- more often than it carries anything personal.
+#
+# The compacted months hold no free text and are what the analysis runs on. Thirteen
+# months is a year plus a month of overlap, so this August compares against last August.
+# That window is sample size rather than sentiment: the log grows at the rate people ask
+# questions, which is slow, and retention is the only dial that buys more of them.
+#
+# The raw tier deliberately outlives the monthly compaction by a wide margin. Compaction
+# is what carries a month into the long tier, so expiring the raw objects at ninety days
+# would make one missed run a silent, permanent loss; at two hundred, three runs have to
+# fail in a row before anything goes missing.
+QUESTION_LOG_RAW_RETENTION_DAYS = 200
 QUESTION_LOG_RETENTION_DAYS = 395
 
 aws.s3.BucketLifecycleConfigurationV2(
@@ -466,10 +482,20 @@ aws.s3.BucketLifecycleConfigurationV2(
     bucket=internal_bucket.id,
     rules=[
         aws.s3.BucketLifecycleConfigurationV2RuleArgs(
-            id="expire-question-log",
+            id="expire-question-log-raw",
             status="Enabled",
             filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
-                prefix=QUESTION_LOG_PREFIX
+                prefix=QUESTION_LOG_RAW_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=QUESTION_LOG_RAW_RETENTION_DAYS
+            ),
+        ),
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-question-log-archive",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=QUESTION_LOG_ARCHIVE_PREFIX
             ),
             expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
                 days=QUESTION_LOG_RETENTION_DAYS
@@ -531,7 +557,8 @@ aws.iam.RolePolicy(
 )
 
 pulumi.export("internal_bucket", internal_bucket.bucket)
-pulumi.export("question_log_prefix", QUESTION_LOG_PREFIX)
+pulumi.export("question_log_prefix", QUESTION_LOG_RAW_PREFIX)
+pulumi.export("question_log_archive_prefix", QUESTION_LOG_ARCHIVE_PREFIX)
 
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
