@@ -432,6 +432,8 @@ aws.s3.Bucket(
 # permissions, since account-level Block Public Access covers both. It is about what
 # opening the public one later costs: with two buckets that is a policy change, and
 # with one it is an audit of every prefix that has to be right every time.
+account_id = aws.get_caller_identity().account_id
+
 internal_bucket = aws.s3.Bucket(
     "ord_internal_bucket",
     bucket="open-reaction-database-internal",
@@ -458,6 +460,9 @@ QUESTION_LOG_PREFIX = "nl-log/"
 # that has to be right about that precedence is a design waiting to delete an archive.
 QUESTION_LOG_RAW_PREFIX = "nl-log/raw/"
 QUESTION_LOG_ARCHIVE_PREFIX = "nl-log/parquet/"
+# Where the trail below delivers. Disjoint from the log's prefixes, so a trail watching
+# the log does not record its own writes.
+AUDIT_PREFIX = "cloudtrail/"
 
 # Two tiers, because the two halves of a record age differently.
 #
@@ -476,6 +481,8 @@ QUESTION_LOG_ARCHIVE_PREFIX = "nl-log/parquet/"
 # fail in a row before anything goes missing.
 QUESTION_LOG_RAW_RETENTION_DAYS = 200
 QUESTION_LOG_RETENTION_DAYS = 395
+# Longer than either, so "who read this" survives the thing that was read.
+AUDIT_RETENTION_DAYS = 730
 
 aws.s3.BucketLifecycleConfigurationV2(
     "ord_internal_bucket_lifecycle",
@@ -501,6 +508,18 @@ aws.s3.BucketLifecycleConfigurationV2(
                 days=QUESTION_LOG_RETENTION_DAYS
             ),
         ),
+        # The access record outlives the records it describes, so a read can still be
+        # attributed after what was read has expired.
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-audit-log",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=AUDIT_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=AUDIT_RETENTION_DAYS
+            ),
+        ),
         # Ordinary hygiene: a failed upload otherwise leaves parts that are billed and
         # invisible. Applies to the whole bucket, which is why it carries no filter.
         aws.s3.BucketLifecycleConfigurationV2RuleArgs(
@@ -515,29 +534,42 @@ aws.s3.BucketLifecycleConfigurationV2(
 )
 
 
-def _question_log_policy(bucket_arn: str) -> str:
-    """Returns a policy allowing the question log to be written and read back.
+# Nothing is granted access to the question log yet, deliberately. The records are what
+# people typed, so a standing grant wants a reason, and the two candidates do not have
+# one yet: nothing serves ord_schema.search.nl, and these stacks build ECS execution
+# roles rather than task roles, so there is no identity a running container assumes to
+# write as. An eval run reads and writes its own file. Whoever needs this next gets a
+# grant scoped to one prefix, with reading separated from listing.
 
-    Scoped to the one prefix rather than the bucket: this bucket is for internal data
-    generally, and a grant for the question log should not carry whatever lands here
-    next. Listing is separated from reading because it is the one action that needs the
-    bucket itself as its resource, and it is confined to the same prefix by condition.
+
+def _cloudtrail_bucket_policy(arguments: list[str]) -> str:
+    """Returns the bucket policy letting CloudTrail deliver into its own prefix.
+
+    Args:
+        arguments: The bucket ARN and the account ID, in that order.
+
+    Returns:
+        The policy document. Delivery is confined to the trail's prefix, and the ACL
+        condition is the one CloudTrail sets on every object it writes.
     """
+    bucket_arn, account_id = arguments
     return json.dumps(
         {
             "Version": "2012-10-17",
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Action": ["s3:PutObject", "s3:GetObject"],
-                    "Resource": f"{bucket_arn}/{QUESTION_LOG_PREFIX}*",
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:GetBucketAcl",
+                    "Resource": bucket_arn,
                 },
                 {
                     "Effect": "Allow",
-                    "Action": "s3:ListBucket",
-                    "Resource": bucket_arn,
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:PutObject",
+                    "Resource": (f"{bucket_arn}/{AUDIT_PREFIX}AWSLogs/{account_id}/*"),
                     "Condition": {
-                        "StringLike": {"s3:prefix": f"{QUESTION_LOG_PREFIX}*"}
+                        "StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control"}
                     },
                 },
             ],
@@ -545,20 +577,65 @@ def _question_log_policy(bucket_arn: str) -> str:
     )
 
 
-# The dev VM is where the eval harness runs, so it is the first thing to both write the
-# log and read it back. A served endpoint will want write access only, but nothing
-# serves ord_schema.search.nl yet and the ECS stacks build execution roles rather than
-# task roles -- there is no identity a container runs as to grant it to. That grant
-# lands with the service.
-aws.iam.RolePolicy(
-    "dev_vm_question_log",
-    role=dev_vm_role.id,
-    policy=internal_bucket.arn.apply(_question_log_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+_trail_delivery = pulumi.Output.all(internal_bucket.arn, account_id)
+internal_bucket_policy = aws.s3.BucketPolicy(
+    "ord_internal_bucket_policy",
+    bucket=internal_bucket.id,
+    policy=_trail_delivery.apply(_cloudtrail_bucket_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+
+
+def _question_log_selectors(bucket_arn: str) -> list:
+    """Returns the data-event selectors naming reads of the question log.
+
+    Args:
+        bucket_arn: ARN of the bucket holding the log.
+
+    Returns:
+        One advanced selector. PutObject is excluded: a write happens once per question
+        and says only what the service already knows, while a read is somebody looking
+        at what people typed, which is the thing worth being able to attribute.
+    """
+    return [
+        aws.cloudtrail.TrailAdvancedEventSelectorArgs(
+            name="question log reads",
+            field_selectors=[
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventCategory", equals=["Data"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.type", equals=["AWS::S3::Object"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.ARN",
+                    starts_withs=[f"{bucket_arn}/{QUESTION_LOG_PREFIX}"],
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventName", not_equals=["PutObject"]
+                ),
+            ],
+        )
+    ]
+
+
+# Object-level access to the log is recorded, so reading it is attributable rather than
+# merely permitted. The trail delivers into this same bucket under a prefix disjoint
+# from the log's, which is what keeps it from recording its own deliveries.
+question_log_trail = aws.cloudtrail.Trail(
+    "question_log_trail",
+    s3_bucket_name=internal_bucket.id,
+    s3_key_prefix=AUDIT_PREFIX.rstrip("/"),
+    include_global_service_events=False,
+    is_multi_region_trail=False,
+    enable_log_file_validation=True,
+    advanced_event_selectors=internal_bucket.arn.apply(_question_log_selectors),  # ty: ignore[missing-argument, invalid-argument-type]
+    opts=pulumi.ResourceOptions(depends_on=[internal_bucket_policy]),
 )
 
 pulumi.export("internal_bucket", internal_bucket.bucket)
 pulumi.export("question_log_prefix", QUESTION_LOG_RAW_PREFIX)
 pulumi.export("question_log_archive_prefix", QUESTION_LOG_ARCHIVE_PREFIX)
+pulumi.export("question_log_trail", question_log_trail.name)
 
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)

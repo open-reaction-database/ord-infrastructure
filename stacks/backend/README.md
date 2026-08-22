@@ -185,7 +185,17 @@ overlap, so this August can be compared against last August. That window is samp
 rather than sentiment: the log grows at the rate people ask questions, which
 is slow, and retention is the only dial that buys more of them.
 
-The dev VM can write and read the prefix, since that is where the eval harness runs. A
-served endpoint will want write access only, but nothing serves `ord_schema.search.nl`
-yet, and the ECS stacks build *execution* roles rather than task roles — there is no
-identity a running container assumes to grant it to. That grant lands with the service.
+**Nothing is granted access to it yet**, deliberately. The records are what people typed,
+so a standing grant wants a reason, and neither candidate has one: nothing serves
+`ord_schema.search.nl`, and these stacks build ECS *execution* roles rather than task
+roles, so there is no identity a running container assumes to write as. An eval run reads
+and writes its own local file. Whoever needs this next gets a grant scoped to one prefix,
+with reading separated from listing.
+
+Object-level reads are recorded by a CloudTrail trail, so looking at the log is
+attributable rather than merely permitted. `PutObject` is excluded from the selector: a
+write happens once per question and says only what the service already knows, while a
+read is somebody looking at what people typed. The trail delivers into this same bucket
+under `cloudtrail/` — disjoint from the log's prefixes, which is what keeps it from
+recording its own deliveries — and its objects are kept **730 days**, longer than either
+tier, so a read can still be attributed after what was read has expired.
