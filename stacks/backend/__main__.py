@@ -425,6 +425,114 @@ aws.s3.Bucket(
     opts=pulumi.ResourceOptions(protect=True),
 )
 
+# The publishable bucket's opposite number. `open-reaction-database` holds artifacts
+# meant to be published one day; this holds what never should be -- starting with the
+# natural-language question log, which is free text people typed against anonymous
+# session identifiers. Keeping them in separate buckets is not about today's
+# permissions, since account-level Block Public Access covers both. It is about what
+# opening the public one later costs: with two buckets that is a policy change, and
+# with one it is an audit of every prefix that has to be right every time.
+internal_bucket = aws.s3.Bucket(
+    "ord_internal_bucket",
+    bucket="open-reaction-database-internal",
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
+# Belt and braces over the account-wide block in the `account` stack: this bucket is the
+# one where a mistake would matter most, and the setting costs nothing to state twice.
+aws.s3.BucketPublicAccessBlock(
+    "ord_internal_bucket_public_access",
+    bucket=internal_bucket.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+
+# Where ord_schema.search.nl_log writes, one object per question.
+QUESTION_LOG_PREFIX = "nl-log/"
+# Thirteen months: a year of questions plus a month of overlap, so this August can be
+# compared against last August. The long window is not sentiment about the data -- it is
+# sample size. The log accumulates at the rate people ask questions, which is slow, so a
+# 90-day window would hold too few to draw a conclusion from, and retention is the only
+# dial that buys more. Free text does not get to accumulate forever on top of that: if
+# volume or sensitivity grows, the move is to expire the question text on a short clock
+# while keeping the outcomes, usage, and fingerprints that carry the analysis -- not to
+# make this number bigger or smaller.
+QUESTION_LOG_RETENTION_DAYS = 395
+
+aws.s3.BucketLifecycleConfigurationV2(
+    "ord_internal_bucket_lifecycle",
+    bucket=internal_bucket.id,
+    rules=[
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-question-log",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=QUESTION_LOG_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=QUESTION_LOG_RETENTION_DAYS
+            ),
+        ),
+        # Ordinary hygiene: a failed upload otherwise leaves parts that are billed and
+        # invisible. Applies to the whole bucket, which is why it carries no filter.
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="abort-incomplete-uploads",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(prefix=""),
+            abort_incomplete_multipart_upload=aws.s3.BucketLifecycleConfigurationV2RuleAbortIncompleteMultipartUploadArgs(
+                days_after_initiation=7
+            ),
+        ),
+    ],
+)
+
+
+def _question_log_policy(bucket_arn: str) -> str:
+    """Returns a policy allowing the question log to be written and read back.
+
+    Scoped to the one prefix rather than the bucket: this bucket is for internal data
+    generally, and a grant for the question log should not carry whatever lands here
+    next. Listing is separated from reading because it is the one action that needs the
+    bucket itself as its resource, and it is confined to the same prefix by condition.
+    """
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": ["s3:PutObject", "s3:GetObject"],
+                    "Resource": f"{bucket_arn}/{QUESTION_LOG_PREFIX}*",
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:ListBucket",
+                    "Resource": bucket_arn,
+                    "Condition": {
+                        "StringLike": {"s3:prefix": f"{QUESTION_LOG_PREFIX}*"}
+                    },
+                },
+            ],
+        }
+    )
+
+
+# The dev VM is where the eval harness runs, so it is the first thing to both write the
+# log and read it back. A served endpoint will want write access only, but nothing
+# serves ord_schema.search.nl yet and the ECS stacks build execution roles rather than
+# task roles -- there is no identity a container runs as to grant it to. That grant
+# lands with the service.
+aws.iam.RolePolicy(
+    "dev_vm_question_log",
+    role=dev_vm_role.id,
+    policy=internal_bucket.arn.apply(_question_log_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+
+pulumi.export("internal_bucket", internal_bucket.bucket)
+pulumi.export("question_log_prefix", QUESTION_LOG_PREFIX)
+
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)

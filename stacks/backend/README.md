@@ -148,3 +148,36 @@ Postgres `readonly` role itself (and its grants) is managed declaratively by the
 [`database` stack](../database/README.md), which reads `rds_ro_password` to set
 the role's password. Deploy `backend` first, then `database` (with the bastion
 tunnel open).
+
+## Buckets, and which one is which
+
+Two buckets, split by intent rather than by content type:
+
+| bucket | holds | public one day? |
+| --- | --- | --- |
+| `open-reaction-database` | artifacts and data meant for publication | possibly |
+| `open-reaction-database-internal` | everything that never should be | never |
+
+Account-level Block Public Access covers both today, so the split buys nothing at the
+moment. It buys something later: opening the publishable bucket becomes a policy change
+rather than an audit of every prefix in it, and an audit that has to be right every time.
+The internal bucket also carries its own public-access block, because it is the one where
+a mistake would matter most.
+
+### The question log (`nl-log/`)
+
+`ord_schema.search.nl_log` writes one JSON object per natural-language question — the
+question, the query it became, what it cost, and how it ended. It never holds the
+reactions a query returned; the query and a corpus fingerprint reproduce those.
+
+Retention is **395 days**, expiring on a lifecycle rule. Thirteen months is a year plus a
+month of overlap, so this August can be compared against last August. The long window is
+sample size rather than sentiment: the log grows at the rate people ask questions, which
+is slow, and retention is the only dial that buys more of them. If volume or sensitivity
+grows, the answer is to expire the question text on a short clock while keeping the
+outcomes, usage, and fingerprints that carry the analysis — not to move this number.
+
+The dev VM can write and read the prefix, since that is where the eval harness runs. A
+served endpoint will want write access only, but nothing serves `ord_schema.search.nl`
+yet, and the ECS stacks build *execution* roles rather than task roles — there is no
+identity a running container assumes to grant it to. That grant lands with the service.
