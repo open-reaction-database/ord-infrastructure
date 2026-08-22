@@ -148,3 +148,54 @@ Postgres `readonly` role itself (and its grants) is managed declaratively by the
 [`database` stack](../database/README.md), which reads `rds_ro_password` to set
 the role's password. Deploy `backend` first, then `database` (with the bastion
 tunnel open).
+
+## Buckets, and which one is which
+
+Two buckets, split by intent rather than by content type:
+
+| bucket | holds | public one day? |
+| --- | --- | --- |
+| `open-reaction-database` | artifacts and data meant for publication | possibly |
+| `open-reaction-database-internal` | everything that never should be | never |
+
+Account-level Block Public Access covers both today, so the split buys nothing at the
+moment. It buys something later: opening the publishable bucket becomes a policy change
+rather than an audit of every prefix in it, and an audit that has to be right every time.
+The internal bucket also carries its own public-access block, because it is the one where
+a mistake would matter most.
+
+### The question log (`nl-log/`)
+
+`ord_schema.search.nl_log` writes one JSON object per natural-language question — the
+question, the query it became, what it cost, and how it ended. It never holds the
+reactions a query returned; the query and a corpus fingerprint reproduce those.
+
+Retention runs on two clocks, because the two halves of a record age differently. The
+raw objects under `nl-log/raw/` hold what people typed and expire at **200 days**; the
+compacted months under `nl-log/parquet/`, which `nl_log.compact(redact=True)` writes with
+the free text emptied out, expire at **395 days**. The prefixes are disjoint rather than
+nested so no object matches both rules — S3 resolves overlapping lifecycle rules by its
+own precedence, and a design that has to be right about that precedence is one waiting to
+delete an archive.
+
+Compaction is what carries a month into the long tier, so the raw clock deliberately
+outlives it by a wide margin: at ninety days one missed run would be a silent permanent
+loss, and at two hundred three runs have to fail in a row before anything goes missing. Thirteen months is a year plus a month of
+overlap, so this August can be compared against last August. That window is sample size
+rather than sentiment: the log grows at the rate people ask questions, which
+is slow, and retention is the only dial that buys more of them.
+
+**Nothing is granted access to it yet**, deliberately. The records are what people typed,
+so a standing grant wants a reason, and neither candidate has one: nothing serves
+`ord_schema.search.nl`, and these stacks build ECS *execution* roles rather than task
+roles, so there is no identity a running container assumes to write as. An eval run reads
+and writes its own local file. Whoever needs this next gets a grant scoped to one prefix,
+with reading separated from listing.
+
+Object-level reads are recorded by a CloudTrail trail, so looking at the log is
+attributable rather than merely permitted. `PutObject` is excluded from the selector: a
+write happens once per question and says only what the service already knows, while a
+read is somebody looking at what people typed. The trail delivers into this same bucket
+under `cloudtrail/` — disjoint from the log's prefixes, which is what keeps it from
+recording its own deliveries — and its objects are kept **730 days**, longer than either
+tier, so a read can still be attributed after what was read has expired.

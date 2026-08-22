@@ -425,6 +425,218 @@ aws.s3.Bucket(
     opts=pulumi.ResourceOptions(protect=True),
 )
 
+# The publishable bucket's opposite number. `open-reaction-database` holds artifacts
+# meant to be published one day; this holds what never should be -- starting with the
+# natural-language question log, which is free text people typed against anonymous
+# session identifiers. Keeping them in separate buckets is not about today's
+# permissions, since account-level Block Public Access covers both. It is about what
+# opening the public one later costs: with two buckets that is a policy change, and
+# with one it is an audit of every prefix that has to be right every time.
+account_id = aws.get_caller_identity().account_id
+
+internal_bucket = aws.s3.Bucket(
+    "ord_internal_bucket",
+    bucket="open-reaction-database-internal",
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
+# Belt and braces over the account-wide block in the `account` stack: this bucket is the
+# one where a mistake would matter most, and the setting costs nothing to state twice.
+aws.s3.BucketPublicAccessBlock(
+    "ord_internal_bucket_public_access",
+    bucket=internal_bucket.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+
+# Everything the question log holds, which is what access is granted over.
+QUESTION_LOG_PREFIX = "nl-log/"
+# Where ord_schema.search.nl_log writes, one object per question, and where
+# nl_log.compact(redact=True) puts the months it folds them into. The two are separate
+# prefixes rather than one nested inside the other so that no object matches both rules
+# below: S3 resolves overlapping lifecycle rules by its own precedence, and a design
+# that has to be right about that precedence is a design waiting to delete an archive.
+QUESTION_LOG_RAW_PREFIX = "nl-log/raw/"
+QUESTION_LOG_ARCHIVE_PREFIX = "nl-log/parquet/"
+# Where the trail below delivers. Disjoint from the log's prefixes, so a trail watching
+# the log does not record its own writes.
+AUDIT_PREFIX = "cloudtrail/"
+
+# Two tiers, because the two halves of a record age differently.
+#
+# The raw objects hold what people typed. That is the half worth retiring early: a
+# question is free text, and on this corpus it carries research intent -- what a chemist
+# is working on -- more often than it carries anything personal.
+#
+# The compacted months hold no free text and are what the analysis runs on. Thirteen
+# months is a year plus a month of overlap, so this August compares against last August.
+# That window is sample size rather than sentiment: the log grows at the rate people ask
+# questions, which is slow, and retention is the only dial that buys more of them.
+#
+# The raw tier deliberately outlives the monthly compaction by a wide margin. Compaction
+# is what carries a month into the long tier, so expiring the raw objects at ninety days
+# would make one missed run a silent, permanent loss; at two hundred, three runs have to
+# fail in a row before anything goes missing.
+QUESTION_LOG_RAW_RETENTION_DAYS = 200
+QUESTION_LOG_RETENTION_DAYS = 395
+# Longer than either, so "who read this" survives the thing that was read.
+AUDIT_RETENTION_DAYS = 730
+
+aws.s3.BucketLifecycleConfigurationV2(
+    "ord_internal_bucket_lifecycle",
+    bucket=internal_bucket.id,
+    rules=[
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-question-log-raw",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=QUESTION_LOG_RAW_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=QUESTION_LOG_RAW_RETENTION_DAYS
+            ),
+        ),
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-question-log-archive",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=QUESTION_LOG_ARCHIVE_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=QUESTION_LOG_RETENTION_DAYS
+            ),
+        ),
+        # The access record outlives the records it describes, so a read can still be
+        # attributed after what was read has expired.
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="expire-audit-log",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(
+                prefix=AUDIT_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationV2RuleExpirationArgs(
+                days=AUDIT_RETENTION_DAYS
+            ),
+        ),
+        # Ordinary hygiene: a failed upload otherwise leaves parts that are billed and
+        # invisible. Applies to the whole bucket, which is why it carries no filter.
+        aws.s3.BucketLifecycleConfigurationV2RuleArgs(
+            id="abort-incomplete-uploads",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationV2RuleFilterArgs(prefix=""),
+            abort_incomplete_multipart_upload=aws.s3.BucketLifecycleConfigurationV2RuleAbortIncompleteMultipartUploadArgs(
+                days_after_initiation=7
+            ),
+        ),
+    ],
+)
+
+
+# Nothing is granted access to the question log yet, deliberately. The records are what
+# people typed, so a standing grant wants a reason, and the two candidates do not have
+# one yet: nothing serves ord_schema.search.nl, and these stacks build ECS execution
+# roles rather than task roles, so there is no identity a running container assumes to
+# write as. An eval run reads and writes its own file. Whoever needs this next gets a
+# grant scoped to one prefix, with reading separated from listing.
+
+
+def _cloudtrail_bucket_policy(arguments: list[str]) -> str:
+    """Returns the bucket policy letting CloudTrail deliver into its own prefix.
+
+    Args:
+        arguments: The bucket ARN and the account ID, in that order.
+
+    Returns:
+        The policy document. Delivery is confined to the trail's prefix, and the ACL
+        condition is the one CloudTrail sets on every object it writes.
+    """
+    bucket_arn, account_id = arguments
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:GetBucketAcl",
+                    "Resource": bucket_arn,
+                },
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:PutObject",
+                    "Resource": (f"{bucket_arn}/{AUDIT_PREFIX}AWSLogs/{account_id}/*"),
+                    "Condition": {
+                        "StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control"}
+                    },
+                },
+            ],
+        }
+    )
+
+
+_trail_delivery = pulumi.Output.all(internal_bucket.arn, account_id)
+internal_bucket_policy = aws.s3.BucketPolicy(
+    "ord_internal_bucket_policy",
+    bucket=internal_bucket.id,
+    policy=_trail_delivery.apply(_cloudtrail_bucket_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+
+
+def _question_log_selectors(bucket_arn: str) -> list:
+    """Returns the data-event selectors naming reads of the question log.
+
+    Args:
+        bucket_arn: ARN of the bucket holding the log.
+
+    Returns:
+        One advanced selector. PutObject is excluded: a write happens once per question
+        and says only what the service already knows, while a read is somebody looking
+        at what people typed, which is the thing worth being able to attribute.
+    """
+    return [
+        aws.cloudtrail.TrailAdvancedEventSelectorArgs(
+            name="question log reads",
+            field_selectors=[
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventCategory", equals=["Data"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.type", equals=["AWS::S3::Object"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.ARN",
+                    starts_withs=[f"{bucket_arn}/{QUESTION_LOG_PREFIX}"],
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventName", not_equals=["PutObject"]
+                ),
+            ],
+        )
+    ]
+
+
+# Object-level access to the log is recorded, so reading it is attributable rather than
+# merely permitted. The trail delivers into this same bucket under a prefix disjoint
+# from the log's, which is what keeps it from recording its own deliveries.
+question_log_trail = aws.cloudtrail.Trail(
+    "question_log_trail",
+    s3_bucket_name=internal_bucket.id,
+    s3_key_prefix=AUDIT_PREFIX.rstrip("/"),
+    include_global_service_events=False,
+    is_multi_region_trail=False,
+    enable_log_file_validation=True,
+    advanced_event_selectors=internal_bucket.arn.apply(_question_log_selectors),  # ty: ignore[missing-argument, invalid-argument-type]
+    opts=pulumi.ResourceOptions(depends_on=[internal_bucket_policy]),
+)
+
+pulumi.export("internal_bucket", internal_bucket.bucket)
+pulumi.export("question_log_prefix", QUESTION_LOG_RAW_PREFIX)
+pulumi.export("question_log_archive_prefix", QUESTION_LOG_ARCHIVE_PREFIX)
+pulumi.export("question_log_trail", question_log_trail.name)
+
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
