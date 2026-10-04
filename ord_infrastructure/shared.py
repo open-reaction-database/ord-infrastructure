@@ -174,8 +174,8 @@ def make_web_service(
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
     enforce_clean: bool = True,
     name_prefix: str | None = None,
-    cpu: int = 4096,
-    memory: int = 8192,
+    cpu: int = 1024,
+    memory: int = 2048,
     cluster_name: str | None = None,
     depends_on: Sequence[pulumi.Resource] | None = None,
 ) -> awsx.ecs.FargateService:
@@ -212,9 +212,9 @@ def make_web_service(
             (alphanumeric + hyphens only — AWS forbids underscores in these names).
             Required for any new environment; leave None for prod so its existing
             auto-generated names are preserved.
-        cpu: Fargate task CPU units (default 4096 = 4 vCPU). Must form a valid
+        cpu: Fargate task CPU units (default 1024 = 1 vCPU). Must form a valid
             Fargate CPU/memory combination.
-        memory: Fargate task memory in MiB (default 8192 = 8 GB).
+        memory: Fargate task memory in MiB (default 2048 = 2 GB).
         cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
             "interface") so clusters are distinguishable in the console. None
             auto-generates a "cluster-*" name. Changing it replaces the cluster.

@@ -213,10 +213,14 @@ redis_security_group = aws.ec2.SecurityGroup(
     ],
     vpc_id=vpc.vpc_id,
 )
+# Valkey rather than Redis OSS: its serverless minimum is 100 MB of data where Redis
+# OSS bills for 1 GB, and this cache holds well under a megabyte. Clients speak the
+# same protocol to either.
 redis = aws.elasticache.ServerlessCache(
     "redis",
     name="redis",
-    engine="redis",
+    engine="valkey",
+    major_engine_version="8",
     cache_usage_limits={
         "data_storage": {
             "maximum": 10,

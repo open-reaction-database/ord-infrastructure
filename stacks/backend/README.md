@@ -1,6 +1,6 @@
 # backend
 
-Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, Redis, and a bastion for local DB access.
+Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a Valkey (Redis-compatible) cache, and a bastion for local DB access.
 
 ## Database sizing
 
