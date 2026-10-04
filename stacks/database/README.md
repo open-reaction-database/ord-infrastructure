@@ -20,7 +20,7 @@ dependency is quarantined here, in the one stack that actually needs it.
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
-  tables, across all four databases. The search database `ord_20260702` also keeps
+  tables, across every database. The search database `ord_20260702` also keeps
   tables outside `public`, so the role gets the same USAGE + SELECT on `ord`
   (ord-schema ORM), `rdkit` (cartridge), and `derived` (generated SMILES and RDKit
   links).
