@@ -91,6 +91,8 @@ cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
     apply_immediately=True,
+    # The database the cluster was created with. Nothing is served from it, and
+    # changing this name replaces the cluster.
     database_name="ord",
     db_subnet_group_name=cluster_subnet_group.name,
     db_cluster_parameter_group_name=cluster_parameter_group.name,

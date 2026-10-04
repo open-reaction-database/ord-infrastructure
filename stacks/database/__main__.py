@@ -33,8 +33,8 @@ TUNNEL_PORT = 15432
 # protected; app_staging is the disposable staging database. The read-only role is
 # granted across all of them. `ord_20260702` is the search database built by the
 # ord-schema 0.8 ORM pipeline, named for the date its load completed.
-DATABASES = ["app", "ord", "ord_20260702", "editor", "app_staging"]
-PROD_DATABASES = {"app", "ord", "ord_20260702", "editor"}
+DATABASES = ["app", "ord_20260702", "editor", "app_staging"]
+PROD_DATABASES = {"app", "ord_20260702", "editor"}
 
 # Databases that already exist on the cluster and must be adopted in place rather than
 # created — a create would fail against the live database, and a replace would drop it.
@@ -49,7 +49,6 @@ IMPORT_DATABASES = set()
 # The Alembic-managed app databases (app, app_staging) and the editor database use
 # public only.
 EXTRA_READONLY_SCHEMAS = {
-    "ord": ["ord", "rdkit"],
     "ord_20260702": ["ord", "rdkit", "derived"],
 }
 
@@ -120,9 +119,8 @@ readonly = postgresql.Role(
     name="readonly",
     login=True,
     password=readonly_password,
-    opts=pulumi.ResourceOptions(
-        provider=providers["ord"], depends_on=[databases["ord"]]
-    ),
+    # A role belongs to the cluster rather than to one database.
+    opts=pulumi.ResourceOptions(provider=maintenance_provider),
 )
 
 
