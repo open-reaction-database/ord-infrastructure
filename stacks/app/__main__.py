@@ -28,18 +28,18 @@ from ord_infrastructure.shared import make_web_service
 config = pulumi.Config()
 subdomain = config.get("subdomain") or "app"
 database = config.get("database") or "app"
+# This environment's rule on the shared HTTPS listener; unique across services.
+listener_rule_priority = config.get_int("listener_rule_priority") or 200
 # Prod requires the sibling repo on a clean `main`; staging deploys any branch.
 enforce_clean = config.get_bool("enforce_clean")
 if enforce_clean is None:
     enforce_clean = True
-# Prod keeps its existing auto-generated ALB/target-group names (name_prefix=None);
+# Prod keeps an auto-generated target-group name (name_prefix=None);
 # new environments need an explicit prefix (AWS forbids underscores in those names).
 name_prefix = None if subdomain == "app" else subdomain
 # Fargate task size — prod's default is 4 vCPU / 8 GB; staging runs smaller/cheaper.
 cpu = config.get_int("cpu") or 4096
 memory = config.get_int("memory") or 8192
-# This environment's rule on the shared HTTPS listener; unique across services.
-listener_rule_priority = config.get_int("listener_rule_priority") or 200
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
