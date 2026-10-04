@@ -91,9 +91,6 @@ cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
     apply_immediately=True,
-    # The database the cluster was created with. Nothing is served from it, and
-    # changing this name replaces the cluster.
-    database_name="ord",
     db_subnet_group_name=cluster_subnet_group.name,
     db_cluster_parameter_group_name=cluster_parameter_group.name,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
@@ -222,7 +219,7 @@ valkey = aws.elasticache.ServerlessCache(
     "valkey",
     name="valkey",
     engine="valkey",
-    major_engine_version="8",
+    major_engine_version="9",
     cache_usage_limits={
         "data_storage": {
             "maximum": 10,
