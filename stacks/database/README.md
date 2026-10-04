@@ -1,7 +1,7 @@
 # database
 
-Pulumi stack for **in-database** objects on the RDS cluster — currently the
-`readonly` Postgres role and its grants. It uses the
+Pulumi stack for **in-database** objects on the RDS cluster: the application
+databases, the `readonly` Postgres role, and its grants. It uses the
 [`postgresql`](https://www.pulumi.com/registry/packages/postgresql/) provider,
 which speaks the Postgres wire protocol directly.
 
@@ -60,3 +60,18 @@ holds data worth protecting. Check `preview` before running `up`: the plan must
 show `import` for the new database, never `replace` (a replace drops it). Remove
 the name from `IMPORT_DATABASES` after `up` records it in state. If the database
 keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
+
+## Removing a database
+
+Removing a database from `DATABASES` makes `up` revoke its grants and drop it.
+Remove it from `PROD_DATABASES` and `EXTRA_READONLY_SCHEMAS` too. A database in
+`PROD_DATABASES` is protected in state, so `up` refuses to delete it until it is
+unprotected:
+
+```sh
+pulumi -C stacks/database state unprotect --stack ord/prod \
+  'urn:pulumi:prod::database::postgresql:index/database:Database::db_<name>'
+```
+
+The provider blocks new connections to the database and terminates open ones
+before dropping it.

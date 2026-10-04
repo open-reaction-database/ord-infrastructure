@@ -42,10 +42,9 @@ PROD_DATABASES = {"app", "ord_20260702", "editor"}
 IMPORT_DATABASES = set()
 
 # Every database exposes readable tables in public; the readonly role is granted
-# there for all of them. The search databases additionally keep tables in non-public
+# there for all of them. The search database also keeps tables in non-public
 # schemas, so the role needs USAGE + SELECT on those too: `ord` (ord-schema's ORM
-# tables) and `rdkit` (the cartridge). The 0.8 ORM splits these by role, adding
-# `derived` for generated SMILES and RDKit links; its payload tables live in public.
+# tables), `rdkit` (the cartridge), and `derived` (generated SMILES and RDKit links).
 # The Alembic-managed app databases (app, app_staging) and the editor database use
 # public only.
 EXTRA_READONLY_SCHEMAS = {
@@ -113,13 +112,13 @@ databases = {
     for db in DATABASES
 }
 
-# The role is a cluster-global object; create it once via any provider.
+# A role belongs to the cluster rather than to one database, so it is created
+# through the maintenance database.
 readonly = postgresql.Role(
     "readonly",
     name="readonly",
     login=True,
     password=readonly_password,
-    # A role belongs to the cluster rather than to one database.
     opts=pulumi.ResourceOptions(provider=maintenance_provider),
 )
 
