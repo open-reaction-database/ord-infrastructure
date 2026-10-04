@@ -38,6 +38,8 @@ name_prefix = None if subdomain == "app" else subdomain
 # Fargate task size — prod's default is 4 vCPU / 8 GB; staging runs smaller/cheaper.
 cpu = config.get_int("cpu") or 4096
 memory = config.get_int("memory") or 8192
+# This environment's rule on the shared HTTPS listener; unique across services.
+listener_rule_priority = config.get_int("listener_rule_priority") or 200
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -58,8 +60,8 @@ make_web_service(
     backend=backend,
     domain=domain,
     container_port=5173,
-    certificate_arn=domain.get_output("wildcard_certificate_arn"),
     record_name=record_name,
+    listener_rule_priority=listener_rule_priority,
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
     secret_arns=[backend.get_output("rds_password_secret_arn")],

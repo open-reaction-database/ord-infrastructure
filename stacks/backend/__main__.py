@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend infrastructure: VPC, RDS Aurora, Redis, and an SSM bastion."""
+"""Shared backend infrastructure: VPC, NAT instance, load balancer, RDS Aurora, Redis,
+and an SSM bastion."""
 
 import json
 from urllib.parse import quote
@@ -22,13 +23,88 @@ import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pulumi_random as random
 
+domain = pulumi.StackReference("ord/domain/prod")
+
+# Availability zones the VPC spans, each with a public and a private subnet.
+AVAILABILITY_ZONES = 3
+
 vpc = awsx.ec2.Vpc(
     "vpc",
     awsx.ec2.VpcArgs(
+        number_of_availability_zones=AVAILABILITY_ZONES,
+        # The private subnets reach the internet through the NAT instance below.
         nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
-            strategy=awsx.ec2.NatGatewayStrategy.SINGLE,
+            strategy=awsx.ec2.NatGatewayStrategy.NONE,
         ),
     ),
+)
+
+# One application load balancer for every site. Each service stack adds a target
+# group and a host-header rule to the HTTPS listener exported below.
+load_balancer_security_group = aws.ec2.SecurityGroup(
+    "load_balancer_security_group",
+    ingress=[
+        aws.ec2.SecurityGroupIngressArgs(
+            from_port=port,
+            to_port=port,
+            protocol="tcp",
+            cidr_blocks=["0.0.0.0/0"],
+            ipv6_cidr_blocks=["::/0"],
+        )
+        for port in (80, 443)
+    ],
+    egress=[
+        aws.ec2.SecurityGroupEgressArgs(
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            cidr_blocks=[vpc.vpc.cidr_block],
+        )
+    ],
+    vpc_id=vpc.vpc_id,
+)
+load_balancer = aws.lb.LoadBalancer(
+    "load-balancer",
+    load_balancer_type="application",
+    security_groups=[load_balancer_security_group.id],
+    subnets=vpc.public_subnet_ids,
+)
+aws.lb.Listener(
+    "http_listener",
+    load_balancer_arn=load_balancer.arn,
+    port=80,
+    protocol="HTTP",
+    default_actions=[
+        aws.lb.ListenerDefaultActionArgs(
+            type="redirect",
+            redirect=aws.lb.ListenerDefaultActionRedirectArgs(
+                port="443", protocol="HTTPS", status_code="HTTP_301"
+            ),
+        )
+    ],
+)
+https_listener = aws.lb.Listener(
+    "https_listener",
+    load_balancer_arn=load_balancer.arn,
+    port=443,
+    protocol="HTTPS",
+    certificate_arn=domain.get_output("certificate_arn"),
+    # A host no service claims gets a 404 rather than another site.
+    default_actions=[
+        aws.lb.ListenerDefaultActionArgs(
+            type="fixed-response",
+            fixed_response=aws.lb.ListenerDefaultActionFixedResponseArgs(
+                content_type="text/plain", status_code="404", message_body="Not found"
+            ),
+        )
+    ],
+)
+# The apex certificate is the listener's default; SNI picks the wildcard for
+# subdomains such as app.
+aws.lb.ListenerCertificate(
+    "wildcard_listener_certificate",
+    listener_arn=https_listener.arn,
+    certificate_arn=domain.get_output("wildcard_certificate_arn"),
 )
 
 cluster_security_group = aws.ec2.SecurityGroup(
@@ -285,6 +361,94 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
+# NAT instance for the private subnets' egress: ECR, Secrets Manager, CloudWatch Logs,
+# and the Anthropic API. It forwards and masquerades with iptables on Amazon Linux,
+# and shares the bastion's instance profile so SSM can reach it.
+nat_security_group = aws.ec2.SecurityGroup(
+    "nat_security_group",
+    ingress=[
+        aws.ec2.SecurityGroupIngressArgs(
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            cidr_blocks=[vpc.vpc.cidr_block],
+        )
+    ],
+    egress=[
+        aws.ec2.SecurityGroupEgressArgs(
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            cidr_blocks=["0.0.0.0/0"],
+            ipv6_cidr_blocks=["::/0"],
+        )
+    ],
+    vpc_id=vpc.vpc_id,
+)
+
+NAT_USER_DATA = """#!/bin/bash
+set -euo pipefail
+dnf install -y iptables-services
+systemctl enable --now iptables
+echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/90-nat.conf
+sysctl --system
+interface=$(ip -o -4 route show to default | awk '{print $5}')
+iptables -t nat -A POSTROUTING -o "$interface" -j MASQUERADE
+# The stock rules reject forwarded traffic.
+iptables -F FORWARD
+service iptables save
+"""
+
+nat_ami_id = aws.ssm.get_parameter_output(
+    name="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64",
+).value
+
+nat_instance = aws.ec2.Instance(
+    "nat_instance",
+    ami=nat_ami_id,
+    instance_type="t4g.nano",
+    iam_instance_profile=bastion_instance_profile.name,
+    subnet_id=vpc.public_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
+    associate_public_ip_address=True,
+    # Forwarded packets carry other hosts' addresses.
+    source_dest_check=False,
+    vpc_security_group_ids=[nat_security_group.id],
+    user_data=NAT_USER_DATA,
+    tags={"Name": "nat"},
+    # A new AMI would replace the instance and cut egress while its successor boots,
+    # so the AMI changes only on purpose.
+    opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
+)
+
+private_route_table_ids = []
+for index in range(AVAILABILITY_ZONES):
+    route_table_id = aws.ec2.get_route_table_output(
+        subnet_id=vpc.private_subnet_ids.apply(lambda ids, i=index: ids[i])  # ty: ignore[missing-argument, invalid-argument-type]
+    ).id
+    private_route_table_ids.append(route_table_id)
+    # Two halves of the address space rather than 0.0.0.0/0: a route table holds one
+    # route per destination, and the halves leave the default route free, so egress
+    # can move between this instance and a NAT gateway without deleting a route first.
+    for half, cidr in (("low", "0.0.0.0/1"), ("high", "128.0.0.0/1")):
+        aws.ec2.Route(
+            f"private_{index + 1}_egress_{half}",
+            route_table_id=route_table_id,
+            destination_cidr_block=cidr,
+            network_interface_id=nat_instance.primary_network_interface_id,
+        )
+
+# ECR serves image layers from S3, so image pulls take this free endpoint rather
+# than the NAT instance.
+aws.ec2.VpcEndpoint(
+    "s3_endpoint",
+    vpc_id=vpc.vpc_id,
+    service_name=pulumi.Output.concat(
+        "com.amazonaws.", aws.get_region_output().region, ".s3"
+    ),
+    vpc_endpoint_type="Gateway",
+    route_table_ids=private_route_table_ids,
+)
+
 # EC2 Instance Connect Endpoint + dev VM for loading datasets into the ORM.
 #
 # The dev VM has no public IP; SSH reaches it through the Instance Connect
@@ -426,6 +590,10 @@ aws.s3.Bucket(
 )
 
 pulumi.export("vpc_id", vpc.vpc_id)
+pulumi.export("load_balancer_dns_name", load_balancer.dns_name)
+pulumi.export("load_balancer_zone_id", load_balancer.zone_id)
+pulumi.export("https_listener_arn", https_listener.arn)
+pulumi.export("nat_instance_id", nat_instance.id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)

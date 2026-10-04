@@ -165,8 +165,8 @@ def make_web_service(
     backend: pulumi.StackReference,
     domain: pulumi.StackReference,
     container_port: int,
-    certificate_arn: pulumi.Input[str],
     record_name: pulumi.Input[str],
+    listener_rule_priority: int,
     sibling_path: str,
     dockerfile: str,
     secret_arns: Sequence[pulumi.Input[str]],
@@ -179,22 +179,27 @@ def make_web_service(
     cluster_name: str | None = None,
     depends_on: Sequence[pulumi.Resource] | None = None,
 ) -> awsx.ecs.FargateService:
-    """Provision a public-facing ECS Fargate web service behind an ALB.
+    """Provision a public-facing ECS Fargate web service behind the shared ALB.
 
-    Builds the full stack shared by the `app` and `interface` projects: an HTTP→HTTPS
-    redirecting ALB, a Route 53 alias to it, an ECR image built from a sibling repo
-    (gated by `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
+    Builds the full stack shared by the `app` and `interface` projects: a target group
+    and a host-header rule on the backend's shared HTTPS listener, a Route 53 alias to
+    that load balancer, an ECR image built from a sibling repo (gated by
+    `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
 
-    Resource names are fixed (e.g. "service", "load_balancer"), so call this at most
+    Resource names are fixed (e.g. "service", "listener_rule"), so call this at most
     once per Pulumi project; the URNs stay stable across the two callers because each
     runs in its own project.
 
     Args:
-        backend: StackReference to `ord/backend/prod` (VPC, subnets).
+        backend: StackReference to `ord/backend/prod` (VPC, subnets, and the shared
+            load balancer and HTTPS listener).
         domain: StackReference to `ord/domain/prod` (hosted zone).
         container_port: Port the container listens on; also the ALB target/health port.
-        certificate_arn: ACM certificate ARN for the HTTPS listener.
-        record_name: Fully-resolved DNS name for the Route 53 alias record.
+        record_name: Fully-resolved DNS name for the Route 53 alias record, and the
+            host the listener rule forwards to this service. Its certificate must be
+            on the shared listener.
+        listener_rule_priority: The rule's priority on the shared HTTPS listener,
+            unique across every service using it.
         sibling_path: Path to the sibling repo to build the image from, relative to
             the working directory (the calling stack's project directory).
         dockerfile: Path to the Dockerfile, relative to the working directory (as
@@ -208,7 +213,7 @@ def make_web_service(
         enforce_clean: If True (default, for prod), require the sibling repo to be on
             a clean `main` before building the image. Set False for staging so the
             current working tree (any branch) can be deployed.
-        name_prefix: Explicit physical-name prefix for the ALB and target group
+        name_prefix: Explicit physical-name prefix for the target group
             (alphanumeric + hyphens only — AWS forbids underscores in these names).
             Required for any new environment; leave None for prod so its existing
             auto-generated names are preserved.
@@ -225,80 +230,37 @@ def make_web_service(
         The created FargateService.
 
     Raises:
-        ValueError: If ``name_prefix`` is too long; AWS caps ALB/target-group names
-            at 32 chars, and the longest derived name is ``f"{name_prefix}-dtg"``.
+        ValueError: If ``name_prefix`` is too long; AWS caps target-group names at 32
+            chars, and the derived name is ``f"{name_prefix}-tg"``.
     """
-    if name_prefix is not None and len(name_prefix) > 28:
+    if name_prefix is not None and len(name_prefix) > 29:
         raise ValueError(
-            f"name_prefix {name_prefix!r} is too long (max 28 chars; derived names append up to '-dtg')"
+            f"name_prefix {name_prefix!r} is too long (max 29 chars; the target group appends '-tg')"
         )
     target_group = aws.lb.TargetGroup(
-        "target_group",
+        "listener_target_group",
         name=f"{name_prefix}-tg" if name_prefix else None,
         port=container_port,
         protocol="HTTP",
         target_type="ip",
         vpc_id=backend.get_output("vpc_id"),
     )
-    load_balancer = awsx.lb.ApplicationLoadBalancer(
-        "load_balancer",
-        name=name_prefix,
-        # awsx always creates a default target group named after this component's
-        # logical name ("load_balancer" → an invalid underscore name on a fresh
-        # deploy). The listeners forward to `target_group`, so the default is unused
-        # — but it still needs a valid name. (prod keeps its existing one.)
-        default_target_group=(
-            awsx.lb.TargetGroupArgs(
-                name=f"{name_prefix}-dtg",
-                port=container_port,
-                protocol="HTTP",
-                target_type="ip",
-                vpc_id=backend.get_output(
-                    "vpc_id"
-                ),  # required by AWS when target_type is "ip"
-            )
-            if name_prefix
-            else None
-        ),
-        listeners=[
-            awsx.lb.ListenerArgs(
-                default_actions=[
-                    aws.lb.ListenerDefaultActionArgs(
-                        type="redirect",
-                        redirect=aws.lb.ListenerDefaultActionRedirectArgs(
-                            port="443", protocol="HTTPS", status_code="HTTP_301"
-                        ),
-                    )
-                ],
-                port=80,
-                protocol="HTTP",
-            ),
-            awsx.lb.ListenerArgs(
-                certificate_arn=certificate_arn,
-                default_actions=[
-                    aws.lb.ListenerDefaultActionArgs(
-                        type="forward", target_group_arn=target_group.arn
-                    )
-                ],
-                port=443,
-                protocol="HTTPS",
-            ),
-        ],
-        subnet_ids=backend.get_output("public_subnet_ids"),
-    )
-
-    aws.route53.Record(
-        "alias",
-        aliases=[
-            aws.route53.RecordAliasArgs(
-                evaluate_target_health=False,
-                name=load_balancer.load_balancer.dns_name,
-                zone_id=load_balancer.load_balancer.zone_id,
+    aws.lb.ListenerRule(
+        "listener_rule",
+        listener_arn=backend.get_output("https_listener_arn"),
+        priority=listener_rule_priority,
+        conditions=[
+            aws.lb.ListenerRuleConditionArgs(
+                host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(
+                    values=[record_name]
+                )
             )
         ],
-        name=record_name,
-        type=aws.route53.RecordType.A,
-        zone_id=domain.get_output("zone_id"),
+        actions=[
+            aws.lb.ListenerRuleActionArgs(
+                type="forward", target_group_arn=target_group.arn
+            )
+        ],
     )
 
     repository = awsx.ecr.Repository(
@@ -348,7 +310,7 @@ def make_web_service(
 
     execution_role = make_ecs_execution_role("execution_role", secret_arns)
 
-    return awsx.ecs.FargateService(
+    service = awsx.ecs.FargateService(
         "service",
         opts=pulumi.ResourceOptions(depends_on=depends_on),
         args=awsx.ecs.FargateServiceArgs(
@@ -385,3 +347,21 @@ def make_web_service(
             ),
         ),
     )
+
+    # After the service, so the name moves to the load balancer only once the service
+    # is registered behind it.
+    aws.route53.Record(
+        "alias",
+        aliases=[
+            aws.route53.RecordAliasArgs(
+                evaluate_target_health=False,
+                name=backend.get_output("load_balancer_dns_name"),
+                zone_id=backend.get_output("load_balancer_zone_id"),
+            )
+        ],
+        name=record_name,
+        type=aws.route53.RecordType.A,
+        zone_id=domain.get_output("zone_id"),
+        opts=pulumi.ResourceOptions(depends_on=[service]),
+    )
+    return service
