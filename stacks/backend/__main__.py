@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend infrastructure: VPC, RDS Aurora, Valkey, and an SSM bastion."""
+"""Shared backend: VPC, NAT instance, ALB, RDS Aurora, Valkey, and an SSM bastion."""
 
 import json
 from urllib.parse import quote

@@ -167,6 +167,7 @@ def make_web_service(
     container_port: int,
     record_name: pulumi.Input[str],
     listener_rule_priority: int,
+    health_check_path: str,
     sibling_path: str,
     dockerfile: str,
     secret_arns: Sequence[pulumi.Input[str]],
@@ -200,6 +201,11 @@ def make_web_service(
             on the shared listener.
         listener_rule_priority: The rule's priority on the shared HTTPS listener,
             unique across every service using it.
+        health_check_path: Path, with any query string, that the load balancer
+            requests to judge a task healthy; only a 200 passes. Point it at an API
+            route that the backend process answers: both images put nginx in front of
+            the API and serve the static UI at `/`, so `/` stays 200 even when the API
+            has failed to start, and a deploy would then replace a working task.
         sibling_path: Path to the sibling repo to build the image from, relative to
             the working directory (the calling stack's project directory).
         dockerfile: Path to the Dockerfile, relative to the working directory (as
@@ -244,6 +250,9 @@ def make_web_service(
         protocol="HTTP",
         target_type="ip",
         vpc_id=backend.get_output("vpc_id"),
+        health_check=aws.lb.TargetGroupHealthCheckArgs(
+            path=health_check_path, matcher="200"
+        ),
     )
     aws.lb.ListenerRule(
         "listener_rule",

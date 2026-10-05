@@ -64,6 +64,8 @@ make_web_service(
     container_port=5173,
     record_name=record_name,
     listener_rule_priority=listener_rule_priority,
+    # Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
+    health_check_path="/api/v1/canonicalize-smiles?smiles=C",
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
     secret_arns=[backend.get_output("rds_password_secret_arn")],

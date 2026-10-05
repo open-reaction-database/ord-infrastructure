@@ -162,6 +162,7 @@ def test_make_web_service_rejects_too_long_name_prefix():
             container_port=8080,
             record_name="test.example.com",
             listener_rule_priority=100,
+            health_check_path="/",
             sibling_path="../../../ord-app",
             dockerfile="../../../ord-app/Dockerfile",
             secret_arns=[],
