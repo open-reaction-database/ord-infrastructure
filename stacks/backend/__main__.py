@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend: VPC, NAT instance, ALB, RDS Aurora, Valkey, and an SSM bastion."""
+"""Shared backend: VPC, NAT gateway, ALB, RDS Aurora, Valkey, and an SSM bastion."""
 
 import json
 
@@ -30,9 +30,8 @@ vpc = awsx.ec2.Vpc(
     "vpc",
     awsx.ec2.VpcArgs(
         number_of_availability_zones=AVAILABILITY_ZONES,
-        # The private subnets reach the internet through the NAT instance below.
         nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
-            strategy=awsx.ec2.NatGatewayStrategy.NONE,
+            strategy=awsx.ec2.NatGatewayStrategy.SINGLE,
         ),
     ),
 )
@@ -336,84 +335,15 @@ bastion = aws.ec2.Instance(
     tags={"Name": "bastion"},
 )
 
-# NAT instance for the private subnets' egress: ECR, Secrets Manager, CloudWatch Logs,
-# and the Anthropic API. It forwards and masquerades with iptables on Amazon Linux,
-# and shares the bastion's instance profile so SSM can reach it.
-nat_security_group = aws.ec2.SecurityGroup(
-    "nat_security_group",
-    ingress=[
-        aws.ec2.SecurityGroupIngressArgs(
-            from_port=0,
-            to_port=0,
-            protocol="-1",
-            cidr_blocks=[vpc.vpc.cidr_block],
-        )
-    ],
-    egress=[
-        aws.ec2.SecurityGroupEgressArgs(
-            from_port=0,
-            to_port=0,
-            protocol="-1",
-            cidr_blocks=["0.0.0.0/0"],
-            ipv6_cidr_blocks=["::/0"],
-        )
-    ],
-    vpc_id=vpc.vpc_id,
-)
-
-NAT_USER_DATA = """#!/bin/bash
-set -euo pipefail
-dnf install -y iptables-services
-systemctl enable --now iptables
-echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/90-nat.conf
-sysctl --system
-interface=$(ip -o -4 route show to default | awk '{print $5}')
-iptables -t nat -A POSTROUTING -o "$interface" -j MASQUERADE
-# The stock rules reject forwarded traffic.
-iptables -F FORWARD
-service iptables save
-"""
-
-nat_ami_id = aws.ssm.get_parameter_output(
-    name="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64",
-).value
-
-nat_instance = aws.ec2.Instance(
-    "nat_instance",
-    ami=nat_ami_id,
-    instance_type="t4g.nano",
-    iam_instance_profile=bastion_instance_profile.name,
-    subnet_id=vpc.public_subnet_ids.apply(lambda ids: ids[0]),  # ty: ignore[missing-argument, invalid-argument-type]
-    associate_public_ip_address=True,
-    # Forwarded packets carry other hosts' addresses.
-    source_dest_check=False,
-    vpc_security_group_ids=[nat_security_group.id],
-    user_data=NAT_USER_DATA,
-    tags={"Name": "nat"},
-    # A new AMI would replace the instance and cut egress while its successor boots,
-    # so the AMI changes only on purpose.
-    opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
-)
-
-private_route_table_ids = []
-for index in range(AVAILABILITY_ZONES):
-    route_table_id = aws.ec2.get_route_table_output(
+private_route_table_ids = [
+    aws.ec2.get_route_table_output(
         subnet_id=vpc.private_subnet_ids.apply(lambda ids, i=index: ids[i])  # ty: ignore[missing-argument, invalid-argument-type]
     ).id
-    private_route_table_ids.append(route_table_id)
-    # Two halves of the address space rather than 0.0.0.0/0: a route table holds one
-    # route per destination, and the halves leave the default route free, so egress
-    # can move between this instance and a NAT gateway without deleting a route first.
-    for half, cidr in (("low", "0.0.0.0/1"), ("high", "128.0.0.0/1")):
-        aws.ec2.Route(
-            f"private_{index + 1}_egress_{half}",
-            route_table_id=route_table_id,
-            destination_cidr_block=cidr,
-            network_interface_id=nat_instance.primary_network_interface_id,
-        )
+    for index in range(AVAILABILITY_ZONES)
+]
 
 # ECR serves image layers from S3, so image pulls take this free endpoint rather
-# than the NAT instance.
+# than the NAT gateway, which charges for every gigabyte it processes.
 aws.ec2.VpcEndpoint(
     "s3_endpoint",
     vpc_id=vpc.vpc_id,
@@ -566,7 +496,6 @@ pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("load_balancer_dns_name", load_balancer.dns_name)
 pulumi.export("load_balancer_zone_id", load_balancer.zone_id)
 pulumi.export("https_listener_arn", https_listener.arn)
-pulumi.export("nat_instance_id", nat_instance.id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
