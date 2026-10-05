@@ -242,8 +242,8 @@ def make_web_service(
         raise ValueError(
             f"name_prefix {name_prefix!r} is too long (max 29 chars; the target group appends '-tg')"
         )
-    # Hyphenated: without name_prefix, AWS's name for the group is generated from this
-    # one, and target group names cannot contain underscores.
+    # Hyphenated: without name_prefix, the group's AWS name is generated from this
+    # resource name, and target group names cannot contain underscores.
     target_group = aws.lb.TargetGroup(
         "listener-target-group",
         name=f"{name_prefix}-tg" if name_prefix else None,
