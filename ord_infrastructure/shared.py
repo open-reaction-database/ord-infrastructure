@@ -221,8 +221,7 @@ def make_web_service(
             current working tree (any branch) can be deployed.
         name_prefix: Explicit physical-name prefix for the target group
             (alphanumeric + hyphens only — AWS forbids underscores in these names).
-            Required for any new environment; leave None for prod so its existing
-            auto-generated names are preserved.
+            None gives the group a generated name.
         cpu: Fargate task CPU units (default 1024 = 1 vCPU). Must form a valid
             Fargate CPU/memory combination.
         memory: Fargate task memory in MiB (default 2048 = 2 GB).
@@ -243,8 +242,10 @@ def make_web_service(
         raise ValueError(
             f"name_prefix {name_prefix!r} is too long (max 29 chars; the target group appends '-tg')"
         )
+    # Hyphenated: without name_prefix, AWS's name for the group is generated from this
+    # one, and target group names cannot contain underscores.
     target_group = aws.lb.TargetGroup(
-        "listener_target_group",
+        "listener-target-group",
         name=f"{name_prefix}-tg" if name_prefix else None,
         port=container_port,
         protocol="HTTP",
@@ -254,7 +255,7 @@ def make_web_service(
             path=health_check_path, matcher="200"
         ),
     )
-    aws.lb.ListenerRule(
+    listener_rule = aws.lb.ListenerRule(
         "listener_rule",
         listener_arn=backend.get_output("https_listener_arn"),
         priority=listener_rule_priority,
@@ -271,6 +272,12 @@ def make_web_service(
             )
         ],
     )
+    # ECS rejects a target group that no load balancer uses, so the service must wait
+    # for the rule. Reading the ARN through the rule makes the dependency part of the
+    # service's input, and the alias below waits on the service.
+    attached_target_group_arn = pulumi.Output.all(
+        target_group.arn, listener_rule.arn
+    ).apply(lambda arns: arns[0])  # ty: ignore[missing-argument, invalid-argument-type]
 
     repository = awsx.ecr.Repository(
         "repository",
@@ -328,7 +335,7 @@ def make_web_service(
                 aws.ecs.ServiceLoadBalancerArgs(
                     container_name="container",
                     container_port=container_port,
-                    target_group_arn=target_group.arn,
+                    target_group_arn=attached_target_group_arn,
                 )
             ],
             network_configuration=aws.ecs.ServiceNetworkConfigurationArgs(

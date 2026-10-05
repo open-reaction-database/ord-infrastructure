@@ -34,8 +34,8 @@ listener_rule_priority = config.get_int("listener_rule_priority") or 200
 enforce_clean = config.get_bool("enforce_clean")
 if enforce_clean is None:
     enforce_clean = True
-# Prod keeps an auto-generated target-group name (name_prefix=None);
-# new environments need an explicit prefix (AWS forbids underscores in those names).
+# Prod's target group gets a generated name; other environments name theirs after the
+# subdomain.
 name_prefix = None if subdomain == "app" else subdomain
 # Fargate task size. A dataset validation holds one core for minutes at a time, so prod's
 # 2 vCPU keep a core free for requests; its 4 GB is about twice ord-app's memory peak.
