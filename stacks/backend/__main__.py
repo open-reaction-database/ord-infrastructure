@@ -363,6 +363,12 @@ nat_security_group = aws.ec2.SecurityGroup(
 
 NAT_USER_DATA = """#!/bin/bash
 set -euo pipefail
+# dnf needs more than the instance's 512 MiB; without swap the OOM killer stops it.
+dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap defaults 0 0' >> /etc/fstab
 dnf install -y iptables-services
 systemctl enable --now iptables
 echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/90-nat.conf
@@ -371,7 +377,10 @@ interface=$(ip -o -4 route show to default | awk '{print $5}')
 iptables -t nat -A POSTROUTING -o "$interface" -j MASQUERADE
 # The stock rules reject forwarded traffic.
 iptables -F FORWARD
-service iptables save
+# The iptables service restores this file at boot.
+iptables-save > /etc/sysconfig/iptables
+# Checked in the console output before any route points here.
+echo "NAT setup complete"
 """
 
 nat_ami_id = aws.ssm.get_parameter_output(
@@ -389,6 +398,8 @@ nat_instance = aws.ec2.Instance(
     source_dest_check=False,
     vpc_security_group_ids=[nat_security_group.id],
     user_data=NAT_USER_DATA,
+    # The script runs only on first boot, so a changed script needs a new instance.
+    user_data_replace_on_change=True,
     tags={"Name": "nat"},
     # A new AMI would replace the instance and cut egress while its successor boots,
     # so the AMI changes only on purpose.
