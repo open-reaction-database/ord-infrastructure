@@ -15,9 +15,9 @@
 """Tests for the deploy-time guards in ord_infrastructure.shared.
 
 These cover the helpers that gate what ships to production — the sibling-repo
-cleanliness check, the image provenance stamp, and the ALB name-length guard.
-Everything else in `shared` builds Pulumi resources, which needs a Pulumi
-runtime; `pulumi preview` covers that.
+cleanliness check, the image provenance stamp, and the ALB name-length guard — and,
+under Pulumi mocks (see conftest.py), what make_web_service passes to the image build
+and the task.
 """
 
 import pathlib
@@ -25,6 +25,7 @@ import subprocess
 from typing import cast
 
 import pulumi
+import pulumi_awsx as awsx
 import pytest
 
 from ord_infrastructure.shared import (
@@ -152,9 +153,44 @@ def test_sibling_head_returns_unknown_outside_a_repo(tmp_path):
     assert sibling_head(str(not_a_repo)) == "unknown"
 
 
+@pulumi.runtime.test
+def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mocks):
+    service = make_web_service(
+        backend=pulumi.StackReference("ord/backend/prod"),
+        domain=pulumi.StackReference("ord/domain/prod"),
+        container_port=5173,
+        record_name="app.example.com",
+        listener_rule_priority=200,
+        health_check_path="/api/v1/health",
+        sibling_path=str(sibling),
+        dockerfile=str(sibling / "Dockerfile"),
+        secret_arns=[],
+        environment=[
+            awsx.ecs.TaskDefinitionKeyValuePairArgs(name="VITE_AUTH0_DOMAIN", value="d")
+        ],
+        # GIT_COMMIT is always the sibling's HEAD; a caller's value cannot replace it.
+        build_args={"VITE_AUTH0_DOMAIN": "d", "GIT_COMMIT": "spoofed"},
+        enforce_clean=False,
+    )
+
+    def check(_: object) -> None:
+        image = pulumi_mocks.inputs_of("awsx:ecr:Image")
+        assert image["args"] == {
+            "VITE_AUTH0_DOMAIN": "d",
+            "GIT_COMMIT": _git(sibling, "rev-parse", "HEAD"),
+        }
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        container = service["taskDefinitionArgs"]["container"]
+        assert container["environment"] == [{"name": "VITE_AUTH0_DOMAIN", "value": "d"}]
+
+    # Resources register asynchronously. The service's inputs include the image's URI, so
+    # by the time its URN resolves, both have registered.
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
 def test_make_web_service_rejects_too_long_name_prefix():
     # The guard runs before any resource is constructed, so this needs no Pulumi
-    # runtime; the accepting path does, and is covered by `pulumi preview`.
+    # runtime or mocks.
     with pytest.raises(ValueError, match="too long"):
         make_web_service(
             backend=cast(pulumi.StackReference, None),

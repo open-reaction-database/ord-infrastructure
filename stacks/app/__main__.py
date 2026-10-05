@@ -55,6 +55,18 @@ pg_dsn = pulumi.Output.format(
     database,
 )
 
+# Auth0 settings. The UI compiles them into its bundle, so they are image build
+# arguments; the backend verifies access tokens against the same tenant, so the task
+# gets them too. ord-app's image build fails if any build argument is missing.
+auth0_domain = config.get("auth0_domain") or "open-reaction-database.us.auth0.com"
+auth0_settings = {
+    "VITE_AUTH0_DOMAIN": auth0_domain,
+    "VITE_AUTH0_CLIENT_ID": config.get("auth0_client_id")
+    or "vtFYKO5ak2a62NUrXRcvFDCBFiSkDu8C",
+    "VITE_AUTH0_AUDIENCE": f"https://{auth0_domain}/api/v2/",
+    "VITE_AUTH0_ISSUER": f"https://{auth0_domain}/",
+}
+
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
@@ -71,7 +83,15 @@ make_web_service(
     secret_arns=[backend.get_output("rds_password_secret_arn")],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="PG_DSN", value=pg_dsn),
+        *(
+            awsx.ecs.TaskDefinitionKeyValuePairArgs(name=name, value=value)
+            for name, value in auth0_settings.items()
+        ),
     ],
+    build_args={
+        **auth0_settings,
+        "VITE_AUTH0_SCOPE": "openid profile email offline_access",
+    },
     secrets=[
         awsx.ecs.TaskDefinitionSecretArgs(
             name="PGPASSWORD",
