@@ -136,9 +136,14 @@ The VM is inside the VPC, so it connects to the cluster directly, with no tunnel
   `rds_password` for authorized writes (see below)
 
 Look up the endpoint and the secret ARN locally; the VM's instance role can read
-both secrets:
+both secrets. The VM boots from a stock Ubuntu image, so install the AWS CLI and
+`psql` on it once:
 
 ```sh
+# On the VM, once:
+sudo snap install aws-cli --classic
+sudo apt-get update && sudo apt-get install -y postgresql-client
+
 # Locally:
 pulumi -C stacks/backend stack output rds_endpoint
 pulumi -C stacks/backend stack output rds_ro_password_secret_arn
