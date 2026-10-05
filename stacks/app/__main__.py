@@ -28,12 +28,14 @@ from ord_infrastructure.shared import make_web_service
 config = pulumi.Config()
 subdomain = config.get("subdomain") or "app"
 database = config.get("database") or "app"
+# This environment's rule on the shared HTTPS listener; unique across services.
+listener_rule_priority = config.get_int("listener_rule_priority") or 200
 # Prod requires the sibling repo on a clean `main`; staging deploys any branch.
 enforce_clean = config.get_bool("enforce_clean")
 if enforce_clean is None:
     enforce_clean = True
-# Prod keeps its existing auto-generated ALB/target-group names (name_prefix=None);
-# new environments need an explicit prefix (AWS forbids underscores in those names).
+# Prod's target group gets a generated name; other environments name theirs after the
+# subdomain.
 name_prefix = None if subdomain == "app" else subdomain
 # Fargate task size. A dataset validation holds one core for minutes at a time, so prod's
 # 2 vCPU keep a core free for requests; its 4 GB is about twice ord-app's memory peak.
@@ -60,8 +62,10 @@ make_web_service(
     backend=backend,
     domain=domain,
     container_port=5173,
-    certificate_arn=domain.get_output("wildcard_certificate_arn"),
     record_name=record_name,
+    listener_rule_priority=listener_rule_priority,
+    # Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
+    health_check_path="/api/v1/canonicalize-smiles?smiles=C",
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
     secret_arns=[backend.get_output("rds_password_secret_arn")],

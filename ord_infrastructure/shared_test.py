@@ -160,10 +160,11 @@ def test_make_web_service_rejects_too_long_name_prefix():
             backend=cast(pulumi.StackReference, None),
             domain=cast(pulumi.StackReference, None),
             container_port=8080,
-            certificate_arn="arn:aws:acm:us-east-1:123456789012:certificate/test",
             record_name="test.example.com",
+            listener_rule_priority=100,
+            health_check_path="/",
             sibling_path="../../../ord-app",
             dockerfile="../../../ord-app/Dockerfile",
             secret_arns=[],
-            name_prefix="x" * 29,
+            name_prefix="x" * 30,
         )

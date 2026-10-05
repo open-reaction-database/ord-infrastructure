@@ -2,6 +2,19 @@
 
 Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a Valkey cache, and a bastion for local DB access.
 
+## Networking
+
+- **Egress.** The private subnets reach the internet through a `t4g.nano` NAT instance
+  in the first public subnet, which forwards and masquerades with iptables. Each private
+  route table sends `0.0.0.0/1` and `128.0.0.0/1` to it, leaving `0.0.0.0/0` free, so
+  egress can move to a NAT gateway and back without deleting a route first. ECR image
+  layers come from S3 through a gateway endpoint rather than the instance. The instance
+  is a single point of failure: if it stops, tasks keep serving but cannot pull images,
+  read secrets, or ship logs until it is back.
+- **Ingress.** One application load balancer serves every site. Its HTTPS listener
+  holds the apex and wildcard certificates and returns 404 for unclaimed hosts; each
+  service stack adds a target group and a host-header rule (`https_listener_arn`).
+
 ## Database sizing
 
 The cluster runs a **provisioned** instance (not Serverless v2), and the instance

@@ -40,8 +40,10 @@ make_web_service(
     backend=backend,
     domain=domain,
     container_port=8080,
-    certificate_arn=domain.get_output("certificate_arn"),
     record_name=domain.get_output("domain_name"),
+    listener_rule_priority=100,
+    # Served by the FastAPI app through nginx's /api/ proxy, with no database.
+    health_check_path="/api/molfile?smiles=C",
     sibling_path="../../../ord-interface",
     dockerfile="../../../ord-interface/ord_interface/Dockerfile",
     secret_arns=[

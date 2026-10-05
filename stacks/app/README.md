@@ -1,7 +1,7 @@
 # app
 
-Pulumi project for ord-app: ECS Fargate service, ALB, ECR image, and DNS. It has
-two stacks:
+Pulumi project for ord-app: ECS Fargate service, a rule on the backend's shared
+load balancer, ECR image, and DNS. It has two stacks:
 
 | Stack | URL | Database | Image source |
 |---|---|---|---|
@@ -30,7 +30,7 @@ enforces).
 # Bring up (or update) staging from the current ord-app working tree:
 pulumi -C stacks/app up      --stack ord/staging
 
-# Tear it down (ALB + ECS + ECR all go; cost returns to ~$0):
+# Tear it down (listener rule + ECS + ECR all go; cost returns to ~$0):
 pulumi -C stacks/app destroy --stack ord/staging
 ```
 
@@ -40,5 +40,5 @@ further changes. The `app_staging` database is managed by the `database` stack;
 its schema is created by running ord-app's Alembic migrations against it.
 
 > Tearing down staging leaves the `app_staging` database (managed by the
-> `database` stack) and the Auth0 callback URL in place — only the compute/ALB/DNS
-> for staging are removed.
+> `database` stack) and the Auth0 callback URL in place — only the compute, the
+> listener rule, and DNS for staging are removed.

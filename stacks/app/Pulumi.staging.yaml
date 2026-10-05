@@ -21,3 +21,4 @@ config:
   # Smaller than prod — plenty for a test environment.
   app:cpu: "1024"
   app:memory: "2048"
+  app:listener_rule_priority: "300"

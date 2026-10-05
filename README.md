@@ -11,8 +11,8 @@ ord-infrastructure/
 │   ├── domain/              # Route 53 hosted zone and ACM certificates
 │   ├── backend/             # VPC, RDS Aurora, Valkey, bastion (see backend/README.md)
 │   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
-│   ├── app/                 # ECS service, ALB, task definitions for ord-app
-│   └── interface/           # ECS service, ALB, task definitions for ord-interface
+│   ├── app/                 # ECS service, listener rule, task definitions for ord-app
+│   └── interface/           # ECS service, listener rule, task definitions for ord-interface
 ├── ord_infrastructure/      # Installable Python package of helpers shared across stacks
 │   └── shared.py            # assert_sibling_clean, make_ecs_execution_role
 └── pyproject.toml           # Build config for ord_infrastructure + tool config (ruff, ty)
@@ -50,7 +50,7 @@ uv sync --locked   # installs ord_infrastructure + dev deps into .venv
 uv run pytest
 ```
 
-The suite covers the deploy-time guards in [`ord_infrastructure/shared.py`](ord_infrastructure/shared.py) — the sibling-repo cleanliness check, the image provenance stamp, and the ALB name-length limit — against throwaway git repositories. It needs no AWS credentials and no Pulumi runtime.
+The suite covers the deploy-time guards in [`ord_infrastructure/shared.py`](ord_infrastructure/shared.py) — the sibling-repo cleanliness check, the image provenance stamp, and the target-group name-length limit — against throwaway git repositories. It needs no AWS credentials and no Pulumi runtime.
 
 The `stacks/` programs are not unit tested: they construct resources at import time, so `pulumi preview` is what validates them. Review the preview diff before every `up`.
 
