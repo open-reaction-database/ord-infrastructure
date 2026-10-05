@@ -141,22 +141,43 @@ aws ec2 stop-instances  --instance-ids "$DEV_VM"   # when done
 aws ec2-instance-connect ssh --instance-id "$DEV_VM"
 ```
 
-From the VM, fetch the database DSN the same way as the
-[bastion section](#connect) — the instance role is allowed to read it.
+The VM is inside the VPC, so it connects to the cluster directly, with no tunnel:
+
+- Host: the `rds_endpoint` stack output
+- Port: `5432`
+- User and password: `readonly` with `rds_ro_password`, or `ord` with
+  `rds_password` for authorized writes (see below)
+
+Look up the endpoint and the secret ARN locally; the VM's instance role can read
+both secrets. The VM boots from a stock Ubuntu image, so install the AWS CLI and
+`psql` on it once:
+
+```sh
+# On the VM, once:
+sudo snap install aws-cli --classic
+sudo apt-get update && sudo apt-get install -y postgresql-client
+
+# Locally:
+pulumi -C stacks/backend stack output rds_endpoint
+pulumi -C stacks/backend stack output rds_ro_password_secret_arn
+
+# On the VM, with the values from above:
+PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "<secret ARN>" \
+  --query SecretString --output text) \
+  psql "host=<rds_endpoint> port=5432 user=readonly dbname=app sslmode=require"
+```
 
 ## Read-only vs read-write credentials
 
-There are two credential sets in Secrets Manager:
+There are two passwords in Secrets Manager, one per Postgres role:
 
-- **`rds_ro_dsn` / `rds_ro_password`** — the `readonly` Postgres role. **Use these by
-  default** for any inspection, by humans and automation alike. The role has `SELECT`
-  on every database the `database` stack manages; the `rds_ro_dsn` connection string
-  targets `app` — change the database name in it (or use `rds_ro_password` directly)
-  to read another.
-- **`rds_dsn` / `rds_password`** — the master `ord` user (full read-write). Reserved
-  for authorized writes (e.g. dataset loads). Don't use these for routine reads.
+- **`rds_ro_password`** — the `readonly` role. **Use it by default** for any
+  inspection, by humans and automation alike. The role has `SELECT` on every
+  database the `database` stack manages.
+- **`rds_password`** — the master `ord` user (full read-write). Reserved for
+  authorized writes (e.g. dataset loads). Don't use it for routine reads.
 
-This stack owns the `readonly` password and the `rds_ro_*` secrets, but the
+This stack owns the `readonly` password and its secret, but the
 Postgres `readonly` role itself (and its grants) is managed declaratively by the
 [`database` stack](../database/README.md), which reads `rds_ro_password` to set
 the role's password. Deploy `backend` first, then `database` (with the bastion
