@@ -19,6 +19,7 @@ import json
 import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
+import pulumi_command as command
 import pulumi_random as random
 
 domain = pulumi.StackReference("ord/domain/prod")
@@ -399,12 +400,41 @@ nat_instance = aws.ec2.Instance(
     vpc_security_group_ids=[nat_security_group.id],
     user_data=NAT_USER_DATA,
     # The script runs only on first boot, so a changed script needs a new instance.
-    # The routes move to it once it is running, so egress pauses until the script ends.
     user_data_replace_on_change=True,
     tags={"Name": "nat"},
-    # A new AMI would replace the instance and cut egress while its successor boots,
-    # so the AMI changes only on purpose.
+    # The AMI parameter moves with every Amazon Linux release; ignoring it keeps
+    # routine deploys from rebuilding the instance.
     opts=pulumi.ResourceOptions(ignore_changes=["ami"]),
+)
+
+# Waits for an instance to pass its status checks and print the script's completion
+# line to its console, failing after about ten minutes of each. A replacement instance
+# is created beside the old one, and the routes below wait on this, so egress stays on
+# the old instance until the new one forwards.
+NAT_READY_SCRIPT = """set -euo pipefail
+aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+for _ in $(seq 60); do
+  output=$(aws ec2 get-console-output --instance-id "$INSTANCE_ID" --latest \
+    --query Output --output text || true)
+  if grep -q 'NAT setup complete' <<< "$output"; then
+    exit 0
+  fi
+  sleep 10
+done
+echo "NAT instance $INSTANCE_ID never reported setup complete" >&2
+exit 1
+"""
+
+nat_ready = command.local.Command(
+    "nat_ready",
+    create=NAT_READY_SCRIPT,
+    interpreter=["/bin/bash", "-c"],
+    environment={
+        "INSTANCE_ID": nat_instance.id,
+        "AWS_REGION": aws.get_region_output().region,
+    },
+    # Runs again for each new instance.
+    triggers=[nat_instance.id],
 )
 
 private_route_table_ids = []
@@ -422,6 +452,7 @@ for index in range(AVAILABILITY_ZONES):
             route_table_id=route_table_id,
             destination_cidr_block=cidr,
             network_interface_id=nat_instance.primary_network_interface_id,
+            opts=pulumi.ResourceOptions(depends_on=[nat_ready]),
         )
 
 # ECR serves image layers from S3, so image pulls take this free endpoint rather
