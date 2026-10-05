@@ -399,6 +399,7 @@ nat_instance = aws.ec2.Instance(
     vpc_security_group_ids=[nat_security_group.id],
     user_data=NAT_USER_DATA,
     # The script runs only on first boot, so a changed script needs a new instance.
+    # The routes move to it once it is running, so egress pauses until the script ends.
     user_data_replace_on_change=True,
     tags={"Name": "nat"},
     # A new AMI would replace the instance and cut egress while its successor boots,
