@@ -35,9 +35,11 @@ if enforce_clean is None:
 # Prod keeps its existing auto-generated ALB/target-group names (name_prefix=None);
 # new environments need an explicit prefix (AWS forbids underscores in those names).
 name_prefix = None if subdomain == "app" else subdomain
-# Fargate task size — prod's default is 4 vCPU / 8 GB; staging runs smaller/cheaper.
-cpu = config.get_int("cpu") or 4096
-memory = config.get_int("memory") or 8192
+# Fargate task size. A dataset validation holds one core for minutes at a time, so prod's
+# 2 vCPU keep a core free for requests; its 4 GB is about twice ord-app's memory peak.
+# Staging runs smaller.
+cpu = config.get_int("cpu") or 2048
+memory = config.get_int("memory") or 4096
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")

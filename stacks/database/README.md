@@ -1,7 +1,7 @@
 # database
 
-Pulumi stack for **in-database** objects on the RDS cluster — currently the
-`readonly` Postgres role and its grants. It uses the
+Pulumi stack for **in-database** objects on the RDS cluster: the application
+databases, the `readonly` Postgres role, and its grants. It uses the
 [`postgresql`](https://www.pulumi.com/registry/packages/postgresql/) provider,
 which speaks the Postgres wire protocol directly.
 
@@ -14,16 +14,16 @@ dependency is quarantined here, in the one stack that actually needs it.
 
 ## What it manages
 
-- The application **databases**: `app`, `ord`, `ord_20260702`, and `editor`
-  (imported and `protect`ed — they hold data, so they're adopted in place, never
-  recreated) plus `app_staging` (created here, for the staging app).
+- The application **databases**: `app`, `ord_20260702`, and `editor` (imported and
+  `protect`ed — they hold data, so they're adopted in place, never recreated) plus
+  `app_staging` (created here, for the staging app).
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
-  tables, across all five databases. The search databases also keep tables outside
-  `public`, so the role gets the same USAGE + SELECT there: `ord` (ord-schema ORM)
-  and `rdkit` (cartridge) for both, plus `derived` (generated SMILES and RDKit
-  links) for `ord_20260702`, which uses the 0.8 role-based schema layout.
+  tables, across every database. The search database `ord_20260702` also keeps
+  tables outside `public`, so the role gets the same USAGE + SELECT on `ord`
+  (ord-schema ORM), `rdkit` (cartridge), and `derived` (generated SMILES and RDKit
+  links).
 
 ## Deploying
 
@@ -50,10 +50,9 @@ on `localhost:15432`.
 
 ## Adding a database
 
-New application databases aren't created here (the cluster auto-creates `ord`;
-others are created out-of-band). To extend the `readonly` grants to a new
-database, add its name to `DATABASES` in `__main__.py` and re-run `up` with the
-tunnel open.
+New application databases aren't created here; they are created out-of-band. To
+extend the `readonly` grants to a new database, add its name to `DATABASES` in
+`__main__.py` and re-run `up` with the tunnel open.
 
 Because the database already exists, also add it to `IMPORT_DATABASES` so Pulumi
 adopts it in place instead of trying to create it, and to `PROD_DATABASES` if it
@@ -61,3 +60,18 @@ holds data worth protecting. Check `preview` before running `up`: the plan must
 show `import` for the new database, never `replace` (a replace drops it). Remove
 the name from `IMPORT_DATABASES` after `up` records it in state. If the database
 keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
+
+## Removing a database
+
+Removing a database from `DATABASES` makes `up` revoke its grants and drop it.
+Remove it from `PROD_DATABASES` and `EXTRA_READONLY_SCHEMAS` too. A database in
+`PROD_DATABASES` is protected in state, so `up` refuses to delete it until it is
+unprotected:
+
+```sh
+pulumi -C stacks/database state unprotect --stack ord/prod \
+  'urn:pulumi:prod::database::postgresql:index/database:Database::db_<name>'
+```
+
+The provider blocks new connections to the database and terminates open ones
+before dropping it.

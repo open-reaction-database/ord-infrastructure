@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend infrastructure: VPC, RDS Aurora, Redis, and an SSM bastion."""
+"""Shared backend infrastructure: VPC, RDS Aurora, Valkey, and an SSM bastion."""
 
 import json
 from urllib.parse import quote
@@ -91,7 +91,6 @@ cluster = aws.rds.Cluster(
     "cluster",
     cluster_identifier="cluster",
     apply_immediately=True,
-    database_name="ord",
     db_subnet_group_name=cluster_subnet_group.name,
     db_cluster_parameter_group_name=cluster_parameter_group.name,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
@@ -201,8 +200,8 @@ cluster_instance = aws.rds.ClusterInstance(
     opts=pulumi.ResourceOptions(protect=True),
 )
 
-redis_security_group = aws.ec2.SecurityGroup(
-    "redis_security_group",
+valkey_security_group = aws.ec2.SecurityGroup(
+    "valkey_security_group",
     ingress=[
         aws.ec2.SecurityGroupIngressArgs(
             from_port=6379,
@@ -213,10 +212,14 @@ redis_security_group = aws.ec2.SecurityGroup(
     ],
     vpc_id=vpc.vpc_id,
 )
-redis = aws.elasticache.ServerlessCache(
-    "redis",
-    name="redis",
-    engine="redis",
+# ord-interface's cache for search-task state and natural-language translations.
+# Valkey Serverless bills for at least 100 MB of data, and the cache holds well
+# under a megabyte.
+valkey = aws.elasticache.ServerlessCache(
+    "valkey",
+    name="valkey",
+    engine="valkey",
+    major_engine_version="9",
     cache_usage_limits={
         "data_storage": {
             "maximum": 10,
@@ -228,7 +231,7 @@ redis = aws.elasticache.ServerlessCache(
             }
         ],
     },
-    security_group_ids=[redis_security_group.id],
+    security_group_ids=[valkey_security_group.id],
     subnet_ids=vpc.private_subnet_ids,
 )
 
@@ -434,8 +437,8 @@ pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
 pulumi.export("rds_ro_password_secret_arn", rds_ro_password_secret.arn)
 pulumi.export("rds_ro_dsn_secret_arn", rds_ro_dsn_secret.arn)
-redis_address = redis.endpoints.apply(lambda endpoints: endpoints[0]["address"])  # ty: ignore[missing-argument, invalid-argument-type]
-pulumi.export("redis_endpoint", redis_address)
+valkey_address = valkey.endpoints.apply(lambda endpoints: endpoints[0]["address"])  # ty: ignore[missing-argument, invalid-argument-type]
+pulumi.export("valkey_endpoint", valkey_address)
 pulumi.export("bastion_instance_id", bastion.id)
 pulumi.export("dev_vm_instance_id", dev_vm.id)
 pulumi.export("instance_connect_endpoint_id", instance_connect_endpoint.id)
