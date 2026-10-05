@@ -128,8 +128,26 @@ aws ec2 stop-instances  --instance-ids "$DEV_VM"   # when done
 aws ec2-instance-connect ssh --instance-id "$DEV_VM"
 ```
 
-From the VM, fetch a database password the same way as the
-[bastion section](#connect) — the instance role is allowed to read both.
+The VM is inside the VPC, so it connects to the cluster directly, with no tunnel:
+
+- Host: the `rds_endpoint` stack output
+- Port: `5432`
+- User and password: `readonly` with `rds_ro_password`, or `ord` with
+  `rds_password` for authorized writes (see below)
+
+Look up the endpoint and the secret ARN locally; the VM's instance role can read
+both secrets:
+
+```sh
+# Locally:
+pulumi -C stacks/backend stack output rds_endpoint
+pulumi -C stacks/backend stack output rds_ro_password_secret_arn
+
+# On the VM, with the values from above:
+PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "<secret ARN>" \
+  --query SecretString --output text) \
+  psql "host=<rds_endpoint> port=5432 user=readonly dbname=app sslmode=require"
+```
 
 ## Read-only vs read-write credentials
 
