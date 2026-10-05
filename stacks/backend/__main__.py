@@ -15,7 +15,6 @@
 """Shared backend infrastructure: VPC, RDS Aurora, Valkey, and an SSM bastion."""
 
 import json
-from urllib.parse import quote
 
 import pulumi
 import pulumi_aws as aws
@@ -132,18 +131,6 @@ aws.secretsmanager.SecretVersion(
         secret_id=rds_password_secret.id, secret_string=rds_password.result
     ),
 )
-rds_dsn_secret = aws.secretsmanager.Secret("rds_dsn")
-aws.secretsmanager.SecretVersion(
-    "rds_dsn_secret_version",
-    aws.secretsmanager.SecretVersionArgs(
-        secret_id=rds_dsn_secret.id,
-        secret_string=pulumi.Output.format(
-            "postgresql+psycopg://ord:{0}@{1}:5432/app",
-            rds_password.result,
-            cluster.endpoint,
-        ),
-    ),
-)
 
 # Read-only credentials for database access (humans and automation alike). The
 # `readonly` role and its grants are managed by the `database` stack (see
@@ -161,20 +148,6 @@ aws.secretsmanager.SecretVersion(
     "rds_ro_password_secret_version",
     aws.secretsmanager.SecretVersionArgs(
         secret_id=rds_ro_password_secret.id, secret_string=readonly_password.result
-    ),
-)
-rds_ro_dsn_secret = aws.secretsmanager.Secret("rds_ro_dsn")
-aws.secretsmanager.SecretVersion(
-    "rds_ro_dsn_secret_version",
-    aws.secretsmanager.SecretVersionArgs(
-        secret_id=rds_ro_dsn_secret.id,
-        # Percent-encode the password: it's embedded in a URI, and the random
-        # special characters would otherwise corrupt parsing (e.g. `#`, `?`, `@`).
-        secret_string=pulumi.Output.format(
-            "postgresql+psycopg://readonly:{0}@{1}:5432/app",
-            readonly_password.result.apply(lambda pw: quote(pw, safe="")),  # ty: ignore[missing-argument, invalid-argument-type]
-            cluster.endpoint,
-        ),
     ),
 )
 
@@ -388,9 +361,7 @@ aws.iam.RolePolicy(
     role=dev_vm_role.id,
     policy=pulumi.Output.all(
         rds_password_secret.arn,
-        rds_dsn_secret.arn,
         rds_ro_password_secret.arn,
-        rds_ro_dsn_secret.arn,
     ).apply(_secrets_read_policy),  # ty: ignore[missing-argument, invalid-argument-type]
 )
 dev_vm_instance_profile = aws.iam.InstanceProfile(
@@ -434,9 +405,7 @@ pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 pulumi.export("rds_endpoint", cluster.endpoint)
 pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
-pulumi.export("rds_dsn_secret_arn", rds_dsn_secret.arn)
 pulumi.export("rds_ro_password_secret_arn", rds_ro_password_secret.arn)
-pulumi.export("rds_ro_dsn_secret_arn", rds_ro_dsn_secret.arn)
 valkey_address = valkey.endpoints.apply(lambda endpoints: endpoints[0]["address"])  # ty: ignore[missing-argument, invalid-argument-type]
 pulumi.export("valkey_endpoint", valkey_address)
 pulumi.export("bastion_instance_id", bastion.id)
