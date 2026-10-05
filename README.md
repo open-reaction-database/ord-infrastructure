@@ -9,7 +9,7 @@ ord-infrastructure/
 ├── stacks/                  # One subdirectory per Pulumi project
 │   ├── account/             # IAM, AWS Identity Center (SSO), account-level S3 BPA
 │   ├── domain/              # Route 53 hosted zone and ACM certificates
-│   ├── backend/             # VPC, RDS Aurora, Redis, bastion (see backend/README.md)
+│   ├── backend/             # VPC, RDS Aurora, Valkey, bastion (see backend/README.md)
 │   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
 │   ├── app/                 # ECS service, listener rule, task definitions for ord-app
 │   └── interface/           # ECS service, listener rule, task definitions for ord-interface

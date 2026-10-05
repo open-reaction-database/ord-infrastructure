@@ -59,9 +59,9 @@ make_web_service(
             name="POSTGRES_DATABASE", value="ord_20260702"
         ),
         awsx.ecs.TaskDefinitionKeyValuePairArgs(
-            name="REDIS_HOST", value=backend.get_output("redis_endpoint")
+            name="VALKEY_HOST", value=backend.get_output("valkey_endpoint")
         ),
-        awsx.ecs.TaskDefinitionKeyValuePairArgs(name="REDIS_SSL", value="1"),
+        awsx.ecs.TaskDefinitionKeyValuePairArgs(name="VALKEY_SSL", value="1"),
     ],
     secrets=[
         awsx.ecs.TaskDefinitionSecretArgs(
