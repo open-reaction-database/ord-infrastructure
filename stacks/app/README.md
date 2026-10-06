@@ -12,6 +12,12 @@ Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
 `subdomain`, `database`, and `enforce_clean`. Prod uses the defaults, so it needs
 no config; staging overrides all three.
 
+The Auth0 tenant domain and the ORD App client ID come from the
+[`auth` stack](../auth/README.md), which owns that client. The image build receives
+them as build arguments, which the UI compiles into its bundle, and the task receives
+them as environment for the backend's token checks. A checkout of ord-app therefore
+needs no `.env` files to build a working image.
+
 ## Database connection
 
 The container gets a **passwordless** `PG_DSN`

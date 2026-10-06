@@ -40,7 +40,7 @@ dev = [
 [tool.pytest.ini_options]
 # Tests are colocated next to the code they exercise (shared.py + shared_test.py),
 # matching the sibling ord repos. The stacks/ programs are not collected: they build
-# resources at import time and need a Pulumi runtime, so `pulumi preview` covers them.
+# resources at import time, so stacks_test.py runs them under Pulumi mocks instead.
 testpaths = ["ord_infrastructure"]
 python_files = ["*_test.py"]
 

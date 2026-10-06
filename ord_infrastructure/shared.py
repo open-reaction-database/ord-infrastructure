@@ -18,7 +18,7 @@ import json
 import os
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import pulumi
 import pulumi_aws as aws
@@ -173,6 +173,7 @@ def make_web_service(
     secret_arns: Sequence[pulumi.Input[str]],
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
+    build_args: Mapping[str, pulumi.Input[str]] | None = None,
     enforce_clean: bool = True,
     name_prefix: str | None = None,
     cpu: int = 1024,
@@ -216,6 +217,9 @@ def make_web_service(
         environment: Plain environment variables for the container.
         secrets: Secrets injected into the container via the ECS `secrets` directive.
             See `secret_arns` — the two must be kept in sync.
+        build_args: Docker build arguments for the image, alongside the `GIT_COMMIT`
+            argument every image gets. A `GIT_COMMIT` here is replaced by the
+            sibling's HEAD.
         enforce_clean: If True (default, for prod), require the sibling repo to be on
             a clean `main` before building the image. Set False for staging so the
             current working tree (any branch) can be deployed.
@@ -296,7 +300,7 @@ def make_web_service(
             # Stamp the source commit into the image (read back as the
             # org.opencontainers.image.revision label) so a deployed image is traceable
             # to a commit without correlating build timestamps against git history.
-            args={"GIT_COMMIT": sibling_head(sibling_path)},
+            args={**(build_args or {}), "GIT_COMMIT": sibling_head(sibling_path)},
         ),
     )
 

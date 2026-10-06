@@ -46,6 +46,7 @@ memory = config.get_int("memory") or 8192
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
+auth = pulumi.StackReference("ord/auth/prod")
 
 # Passwordless DSN — the password is injected separately via PGPASSWORD, so the one
 # shared rds_password secret works for every environment and only the database name
@@ -55,6 +56,18 @@ pg_dsn = pulumi.Output.format(
     backend.get_output("rds_endpoint"),
     database,
 )
+
+# Auth0 settings, from the auth stack that owns the ORD App client. The UI compiles them
+# into its bundle, so they are image build arguments; the backend verifies access tokens
+# against the same tenant, so the task gets them too. ord-app's image build fails if any
+# build argument is missing.
+auth0_domain = auth.get_output("domain")
+auth0_settings = {
+    "VITE_AUTH0_DOMAIN": auth0_domain,
+    "VITE_AUTH0_CLIENT_ID": auth.get_output("ord_app_client_id"),
+    "VITE_AUTH0_AUDIENCE": pulumi.Output.format("https://{0}/api/v2/", auth0_domain),
+    "VITE_AUTH0_ISSUER": pulumi.Output.format("https://{0}/", auth0_domain),
+}
 
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
@@ -72,7 +85,15 @@ make_web_service(
     secret_arns=[backend.get_output("rds_password_secret_arn")],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="PG_DSN", value=pg_dsn),
+        *(
+            awsx.ecs.TaskDefinitionKeyValuePairArgs(name=name, value=value)
+            for name, value in auth0_settings.items()
+        ),
     ],
+    build_args={
+        **auth0_settings,
+        "VITE_AUTH0_SCOPE": "openid profile email offline_access",
+    },
     secrets=[
         awsx.ecs.TaskDefinitionSecretArgs(
             name="PGPASSWORD",
