@@ -218,7 +218,8 @@ def make_web_service(
         secrets: Secrets injected into the container via the ECS `secrets` directive.
             See `secret_arns` — the two must be kept in sync.
         build_args: Docker build arguments for the image, alongside the `GIT_COMMIT`
-            argument every image gets.
+            argument every image gets. A `GIT_COMMIT` here is replaced by the
+            sibling's HEAD.
         enforce_clean: If True (default, for prod), require the sibling repo to be on
             a clean `main` before building the image. Set False for staging so the
             current working tree (any branch) can be deployed.
