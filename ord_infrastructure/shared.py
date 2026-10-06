@@ -173,7 +173,7 @@ def make_web_service(
     secret_arns: Sequence[pulumi.Input[str]],
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
-    build_args: Mapping[str, str] | None = None,
+    build_args: Mapping[str, pulumi.Input[str]] | None = None,
     enforce_clean: bool = True,
     name_prefix: str | None = None,
     cpu: int = 1024,

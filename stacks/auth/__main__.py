@@ -108,5 +108,6 @@ management_api_grant = auth0.ClientGrant(
     opts=pulumi.ResourceOptions(protect=True),
 )
 
+pulumi.export("domain", pulumi.Config("auth0").require("domain"))
 pulumi.export("ord_app_client_id", ord_app.client_id)
 pulumi.export("management_api_client_id", management_api.client_id)

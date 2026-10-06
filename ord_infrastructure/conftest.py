@@ -23,7 +23,8 @@ import pytest
 class RecordingMocks(pulumi.runtime.Mocks):
     """Records the inputs of every resource registered, without creating any."""
 
-    # The backend and domain stack outputs that the app stack and make_web_service read.
+    # The backend, domain, and auth stack outputs that the app stack and
+    # make_web_service read.
     STACK_OUTPUTS: ClassVar[dict[str, object]] = {
         "vpc_id": "vpc-0",
         "vpc_cidr_block": "10.0.0.0/16",
@@ -33,6 +34,8 @@ class RecordingMocks(pulumi.runtime.Mocks):
         "load_balancer_zone_id": "Z0",
         "zone_id": "Z1",
         "domain_name": "example.com",
+        "domain": "tenant.auth0.example.com",
+        "ord_app_client_id": "client-0",
         "rds_endpoint": "db.example.com",
         "rds_password_secret_arn": "arn:aws:secretsmanager:secret/0",
     }

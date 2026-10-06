@@ -46,6 +46,7 @@ memory = config.get_int("memory") or 8192
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
+auth = pulumi.StackReference("ord/auth/prod")
 
 # Passwordless DSN — the password is injected separately via PGPASSWORD, so the one
 # shared rds_password secret works for every environment and only the database name
@@ -56,16 +57,16 @@ pg_dsn = pulumi.Output.format(
     database,
 )
 
-# Auth0 settings. The UI compiles them into its bundle, so they are image build
-# arguments; the backend verifies access tokens against the same tenant, so the task
-# gets them too. ord-app's image build fails if any build argument is missing.
-auth0_domain = config.get("auth0_domain") or "open-reaction-database.us.auth0.com"
+# Auth0 settings, from the auth stack that owns the ORD App client. The UI compiles them
+# into its bundle, so they are image build arguments; the backend verifies access tokens
+# against the same tenant, so the task gets them too. ord-app's image build fails if any
+# build argument is missing.
+auth0_domain = auth.get_output("domain")
 auth0_settings = {
     "VITE_AUTH0_DOMAIN": auth0_domain,
-    "VITE_AUTH0_CLIENT_ID": config.get("auth0_client_id")
-    or "vtFYKO5ak2a62NUrXRcvFDCBFiSkDu8C",
-    "VITE_AUTH0_AUDIENCE": f"https://{auth0_domain}/api/v2/",
-    "VITE_AUTH0_ISSUER": f"https://{auth0_domain}/",
+    "VITE_AUTH0_CLIENT_ID": auth.get_output("ord_app_client_id"),
+    "VITE_AUTH0_AUDIENCE": pulumi.Output.format("https://{0}/api/v2/", auth0_domain),
+    "VITE_AUTH0_ISSUER": pulumi.Output.format("https://{0}/", auth0_domain),
 }
 
 domain_name = domain.get_output("domain_name")
