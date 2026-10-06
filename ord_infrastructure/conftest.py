@@ -23,21 +23,27 @@ import pytest
 class RecordingMocks(pulumi.runtime.Mocks):
     """Records the inputs of every resource registered, without creating any."""
 
-    # The backend, domain, and auth stack outputs that the app stack and
-    # make_web_service read.
-    STACK_OUTPUTS: ClassVar[dict[str, object]] = {
-        "vpc_id": "vpc-0",
-        "vpc_cidr_block": "10.0.0.0/16",
-        "private_subnet_ids": ["subnet-0", "subnet-1"],
-        "https_listener_arn": "arn:aws:elasticloadbalancing:listener/0",
-        "load_balancer_dns_name": "lb.example.com",
-        "load_balancer_zone_id": "Z0",
-        "zone_id": "Z1",
-        "domain_name": "example.com",
-        "domain": "tenant.auth0.example.com",
-        "ord_app_client_id": "client-0",
-        "rds_endpoint": "db.example.com",
-        "rds_password_secret_arn": "arn:aws:secretsmanager:secret/0",
+    # The outputs the app stack and make_web_service read, per stack, so a value read
+    # from the wrong stack comes back missing.
+    STACK_OUTPUTS: ClassVar[dict[str, dict[str, object]]] = {
+        "ord/backend/prod": {
+            "vpc_id": "vpc-0",
+            "vpc_cidr_block": "10.0.0.0/16",
+            "private_subnet_ids": ["subnet-0", "subnet-1"],
+            "https_listener_arn": "arn:aws:elasticloadbalancing:listener/0",
+            "load_balancer_dns_name": "lb.example.com",
+            "load_balancer_zone_id": "Z0",
+            "rds_endpoint": "db.example.com",
+            "rds_password_secret_arn": "arn:aws:secretsmanager:secret/0",
+        },
+        "ord/domain/prod": {
+            "zone_id": "Z1",
+            "domain_name": "example.com",
+        },
+        "ord/auth/prod": {
+            "domain": "tenant.auth0.example.com",
+            "ord_app_client_id": "client-0",
+        },
     }
 
     def __init__(self) -> None:
@@ -48,7 +54,8 @@ class RecordingMocks(pulumi.runtime.Mocks):
     ) -> tuple[str | None, dict]:
         self.resources.append(args)
         if args.typ == "pulumi:pulumi:StackReference":
-            return f"{args.name}_id", {"name": args.name, "outputs": self.STACK_OUTPUTS}
+            outputs = self.STACK_OUTPUTS[args.name]
+            return f"{args.name}_id", {"name": args.name, "outputs": outputs}
         return f"{args.name}_id", dict(args.inputs)
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> tuple[dict, list | None]:

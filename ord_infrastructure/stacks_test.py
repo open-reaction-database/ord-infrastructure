@@ -62,10 +62,10 @@ def test_app_stack_passes_auth0_settings_to_build_and_task(
         build_args = pulumi_mocks.inputs_of("awsx:ecr:Image")["args"]
         assert all(build_args.get(name) for name in AUTH0_BUILD_ARGS)
         # The tenant and client come from the auth stack, which owns the client.
-        tenant = pulumi_mocks.STACK_OUTPUTS["domain"]
+        auth = pulumi_mocks.STACK_OUTPUTS["ord/auth/prod"]
+        tenant = auth["domain"]
         assert build_args["VITE_AUTH0_DOMAIN"] == tenant
-        client_id = pulumi_mocks.STACK_OUTPUTS["ord_app_client_id"]
-        assert build_args["VITE_AUTH0_CLIENT_ID"] == client_id
+        assert build_args["VITE_AUTH0_CLIENT_ID"] == auth["ord_app_client_id"]
         assert build_args["VITE_AUTH0_AUDIENCE"] == f"https://{tenant}/api/v2/"
         assert build_args["VITE_AUTH0_ISSUER"] == f"https://{tenant}/"
 
