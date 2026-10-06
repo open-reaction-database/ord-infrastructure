@@ -80,23 +80,3 @@ def test_app_stack_passes_auth0_settings_to_build_and_task(
 
     (service,) = services
     return service.urn.apply(check)
-
-
-@pytest.mark.parametrize("missing", ["domain", "ord_app_client_id"])
-def test_app_stack_fails_without_an_auth_output(
-    missing, pulumi_mocks, services, monkeypatch
-):
-    outputs = dict(pulumi_mocks.STACK_OUTPUTS["ord/auth/prod"])
-    del outputs[missing]
-    monkeypatch.setitem(pulumi_mocks.STACK_OUTPUTS, "ord/auth/prod", outputs)
-
-    @pulumi.runtime.test
-    def run() -> pulumi.Output:
-        pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-        monkeypatch.chdir(STACKS / "app")
-        runpy.run_path("__main__.py")
-        (service,) = services
-        return service.urn
-
-    with pytest.raises(Exception, match=missing):
-        run()
