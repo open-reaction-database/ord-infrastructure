@@ -15,7 +15,8 @@
 config:
   aws:region: us-east-1
   app:subdomain: app-staging
-  app:database: app_staging
+  # No app:database, so staging uses prod's `app` database: a build runs against prod's
+  # data and accounts.
   # Deploy whatever branch is checked out in ord-app, not just a clean main.
   app:enforce_clean: "false"
   # Smaller than prod — plenty for a test environment.
