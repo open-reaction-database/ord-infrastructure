@@ -100,3 +100,32 @@ def test_app_stack_fails_without_an_auth_output(
 
     with pytest.raises(Exception, match=missing):
         run()
+
+
+@pulumi.runtime.test
+def test_app_stack_gives_the_task_a_download_link_key(
+    pulumi_mocks, services, monkeypatch
+):
+    pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
+    monkeypatch.chdir(STACKS / "app")
+    runpy.run_path("__main__.py")
+
+    def check(_: object) -> None:
+        secret_arn = "arn:aws:secretsmanager:secret/download_link_secret"
+        version = pulumi_mocks.inputs_of(
+            "aws:secretsmanager/secretVersion:SecretVersion"
+        )
+        # The generated key stays a Pulumi secret, so it arrives wrapped.
+        assert version["secretString"]["value"] == "generated"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        secrets = {
+            secret["name"]: secret["valueFrom"]
+            for secret in service["taskDefinitionArgs"]["container"]["secrets"]
+        }
+        assert secrets["DOWNLOAD_LINK_SECRET"] == secret_arn
+        # The execution role must be able to read every secret the task references.
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        assert secret_arn in policy
+
+    (service,) = services
+    return service.urn.apply(check)

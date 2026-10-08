@@ -56,7 +56,14 @@ class RecordingMocks(pulumi.runtime.Mocks):
         if args.typ == "pulumi:pulumi:StackReference":
             outputs = self.STACK_OUTPUTS[args.name]
             return f"{args.name}_id", {"name": args.name, "outputs": outputs}
-        return f"{args.name}_id", dict(args.inputs)
+        # Outputs that the provider computes and a stack reads back.
+        computed = {
+            "aws:secretsmanager/secret:Secret": {
+                "arn": f"arn:aws:secretsmanager:secret/{args.name}"
+            },
+            "random:index/randomPassword:RandomPassword": {"result": "generated"},
+        }
+        return f"{args.name}_id", dict(args.inputs) | computed.get(args.typ, {})
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> tuple[dict, list | None]:
         return {}, None

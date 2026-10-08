@@ -21,7 +21,9 @@ app_staging database, built from whatever branch is checked out.
 """
 
 import pulumi
+import pulumi_aws as aws
 import pulumi_awsx as awsx
+import pulumi_random as random
 
 from ord_infrastructure.shared import make_web_service
 
@@ -70,6 +72,18 @@ auth0_settings = {
     "VITE_AUTH0_ISSUER": pulumi.Output.format("https://{0}/", auth0_domain),
 }
 
+# Key that signs ord-app's download links. Each environment generates its own, and every
+# worker reads the same one from Secrets Manager. Replacing it only invalidates links made
+# in the 30 seconds before.
+download_link_key = random.RandomPassword("download_link_key", length=48, special=False)
+download_link_secret = aws.secretsmanager.Secret("download_link_secret")
+aws.secretsmanager.SecretVersion(
+    "download_link_secret_version",
+    aws.secretsmanager.SecretVersionArgs(
+        secret_id=download_link_secret.id, secret_string=download_link_key.result
+    ),
+)
+
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
@@ -83,7 +97,10 @@ make_web_service(
     health_check_path="/api/v1/canonicalize-smiles?smiles=C",
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
-    secret_arns=[backend.get_output("rds_password_secret_arn")],
+    secret_arns=[
+        backend.get_output("rds_password_secret_arn"),
+        download_link_secret.arn,
+    ],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="PG_DSN", value=pg_dsn),
         *(
@@ -99,6 +116,9 @@ make_web_service(
         awsx.ecs.TaskDefinitionSecretArgs(
             name="PGPASSWORD",
             value_from=backend.get_output("rds_password_secret_arn"),
+        ),
+        awsx.ecs.TaskDefinitionSecretArgs(
+            name="DOWNLOAD_LINK_SECRET", value_from=download_link_secret.arn
         ),
     ],
     enforce_clean=enforce_clean,
