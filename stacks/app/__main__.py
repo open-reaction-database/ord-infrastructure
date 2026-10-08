@@ -40,11 +40,12 @@ if enforce_clean is None:
 # subdomain.
 name_prefix = None if subdomain == "app" else subdomain
 # Fargate task size. A dataset validation holds one core for minutes at a time, so prod's
-# 2 vCPU keep a core free for requests. Memory is sized for downloads: ord-app builds a
-# JSON or text download in memory, and one of a 50,688-reaction dataset peaks at about
-# 5 GB in a single worker. Staging runs smaller.
+# 2 vCPU keep a core free for requests. 4 GB is the least memory Fargate pairs with 2 vCPU.
+# ord-app streams downloads, and at this size it peaked at 1.9 GiB uploading a
+# 50,688-reaction dataset twice, then downloading it in every format while it validated.
+# Staging runs smaller.
 cpu = config.get_int("cpu") or 2048
-memory = config.get_int("memory") or 8192
+memory = config.get_int("memory") or 4096
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
