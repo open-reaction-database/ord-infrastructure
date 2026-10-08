@@ -29,8 +29,10 @@ environments is just a different database name — no per-environment DSN secret
 
 ord-app signs its short-lived download links with `DOWNLOAD_LINK_SECRET`, and refuses
 to start without it. The stack generates a key per environment, stores it in Secrets
-Manager (`download_link_secret`), and injects it into the task as a secret. Replacing
-the key only invalidates links made in the 30 seconds before.
+Manager (`download_link_secret`), and injects it into the task as a secret. ECS reads
+the secret when a task starts, so a replaced key reaches the service only as its tasks
+restart, for example on the next deploy; it invalidates links made in the 30 seconds
+before that.
 
 ## Staging: bring it up / tear it down
 

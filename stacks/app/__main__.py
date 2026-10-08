@@ -73,11 +73,12 @@ auth0_settings = {
 }
 
 # Key that signs ord-app's download links. Each environment generates its own, and every
-# worker reads the same one from Secrets Manager. Replacing it only invalidates links made
-# in the 30 seconds before.
+# worker reads the same one from Secrets Manager. ECS reads it when a task starts, so a
+# replaced key reaches tasks as they restart, and only invalidates links made in the 30
+# seconds before that.
 download_link_key = random.RandomPassword("download_link_key", length=48, special=False)
 download_link_secret = aws.secretsmanager.Secret("download_link_secret")
-aws.secretsmanager.SecretVersion(
+download_link_secret_version = aws.secretsmanager.SecretVersion(
     "download_link_secret_version",
     aws.secretsmanager.SecretVersionArgs(
         secret_id=download_link_secret.id, secret_string=download_link_key.result
@@ -126,4 +127,6 @@ make_web_service(
     cpu=cpu,
     memory=memory,
     cluster_name=subdomain,  # "app" (prod) / "app-staging" — distinguishable in the console
+    # The task reads the key at startup, so it must have a value before the service starts.
+    depends_on=[download_link_secret_version],
 )
