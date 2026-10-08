@@ -96,7 +96,7 @@ def test_app_stack_fails_without_an_auth_output(
         pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
         monkeypatch.chdir(STACKS / "app")
         runpy.run_path("__main__.py")
-        (service,) = services
+        ((service, _),) = services
         return service.urn
 
     with pytest.raises(Exception, match=missing):
