@@ -72,9 +72,9 @@ auth0_settings = {
     "VITE_AUTH0_ISSUER": pulumi.Output.format("https://{0}/", auth0_domain),
 }
 
-# Key that signs ord-app's download links. Each environment generates its own, and every
-# worker reads the same one from Secrets Manager. ECS reads it when a task starts, so a
-# replaced key reaches tasks as they restart, and only invalidates links made in the 30
+# Key that signs ord-app's download links, generated per environment. ECS injects it from
+# Secrets Manager when a task starts, so every worker in the task shares it, and a replaced
+# key reaches the service as its tasks restart; it invalidates links made in the 30
 # seconds before that.
 download_link_key = random.RandomPassword("download_link_key", length=48, special=False)
 download_link_secret = aws.secretsmanager.Secret("download_link_secret")
