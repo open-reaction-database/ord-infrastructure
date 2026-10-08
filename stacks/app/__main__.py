@@ -21,7 +21,9 @@ app_staging database, built from whatever branch is checked out.
 """
 
 import pulumi
+import pulumi_aws as aws
 import pulumi_awsx as awsx
+import pulumi_random as random
 
 from ord_infrastructure.shared import make_web_service
 
@@ -70,6 +72,19 @@ auth0_settings = {
     "VITE_AUTH0_ISSUER": pulumi.Output.format("https://{0}/", auth0_domain),
 }
 
+# Key that signs ord-app's download links, generated per environment. ECS injects it from
+# Secrets Manager when a task starts, so every worker in the task shares it, and a replaced
+# key reaches the service as its tasks restart; it invalidates links made in the 30
+# seconds before that.
+download_link_key = random.RandomPassword("download_link_key", length=48, special=False)
+download_link_secret = aws.secretsmanager.Secret("download_link_secret")
+download_link_secret_version = aws.secretsmanager.SecretVersion(
+    "download_link_secret_version",
+    aws.secretsmanager.SecretVersionArgs(
+        secret_id=download_link_secret.id, secret_string=download_link_key.result
+    ),
+)
+
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
@@ -83,7 +98,10 @@ make_web_service(
     health_check_path="/api/v1/canonicalize-smiles?smiles=C",
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/Dockerfile.single",
-    secret_arns=[backend.get_output("rds_password_secret_arn")],
+    secret_arns=[
+        backend.get_output("rds_password_secret_arn"),
+        download_link_secret.arn,
+    ],
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="PG_DSN", value=pg_dsn),
         *(
@@ -100,10 +118,15 @@ make_web_service(
             name="PGPASSWORD",
             value_from=backend.get_output("rds_password_secret_arn"),
         ),
+        awsx.ecs.TaskDefinitionSecretArgs(
+            name="DOWNLOAD_LINK_SECRET", value_from=download_link_secret.arn
+        ),
     ],
     enforce_clean=enforce_clean,
     name_prefix=name_prefix,
     cpu=cpu,
     memory=memory,
     cluster_name=subdomain,  # "app" (prod) / "app-staging" — distinguishable in the console
+    # The task reads the key at startup, so it must have a value before the service starts.
+    depends_on=[download_link_secret_version],
 )
