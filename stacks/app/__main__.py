@@ -43,7 +43,7 @@ name_prefix = None if subdomain == "app" else subdomain
 # 2 vCPU keep a core free for requests. 4 GB is the least memory Fargate pairs with 2 vCPU.
 # ord-app streams downloads, and at this size it peaked at 1.9 GiB uploading a
 # 50,688-reaction dataset twice, then downloading it in every format while it validated.
-# Staging runs smaller.
+# Staging uses the same size.
 cpu = config.get_int("cpu") or 2048
 memory = config.get_int("memory") or 4096
 

@@ -11,7 +11,7 @@ load balancer, ECR image, and DNS. It has two stacks:
 Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
 `subdomain`, `database`, and `enforce_clean`. Prod uses the defaults, so it needs
 no config; staging overrides `subdomain` and `enforce_clean` and keeps prod's
-`database`.
+`database` and task size (`cpu`, `memory`).
 
 The Auth0 tenant domain and the ORD App client ID come from the
 [`auth` stack](../auth/README.md), which owns that client. The image build receives
