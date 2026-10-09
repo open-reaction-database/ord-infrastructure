@@ -153,9 +153,9 @@ def test_sibling_head_returns_unknown_outside_a_repo(tmp_path):
     assert sibling_head(str(not_a_repo)) == "unknown"
 
 
-@pulumi.runtime.test
-def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mocks):
-    service = make_web_service(
+def _web_service(sibling: pathlib.Path, **kwargs) -> awsx.ecs.FargateService:
+    """Call make_web_service on `sibling`, adding `kwargs` to the shared arguments."""
+    return make_web_service(
         backend=pulumi.StackReference("ord/backend/prod"),
         domain=pulumi.StackReference("ord/domain/prod"),
         container_port=5173,
@@ -165,12 +165,20 @@ def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mock
         sibling_path=str(sibling),
         dockerfile=str(sibling / "Dockerfile"),
         secret_arns=[],
+        enforce_clean=False,
+        **kwargs,
+    )
+
+
+@pulumi.runtime.test
+def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mocks):
+    service = _web_service(
+        sibling,
         environment=[
             awsx.ecs.TaskDefinitionKeyValuePairArgs(name="VITE_AUTH0_DOMAIN", value="d")
         ],
         # GIT_COMMIT is always the sibling's HEAD; a caller's value cannot replace it.
         build_args={"VITE_AUTH0_DOMAIN": "d", "GIT_COMMIT": "spoofed"},
-        enforce_clean=False,
     )
 
     def check(_: object) -> None:
@@ -189,19 +197,24 @@ def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mock
 
 
 @pulumi.runtime.test
+def test_make_web_service_builds_for_the_task_architecture(sibling, pulumi_mocks):
+    service = _web_service(sibling)
+
+    def check(_: object) -> None:
+        image = pulumi_mocks.inputs_of("awsx:ecr:Image")
+        assert image["platform"] == "linux/arm64"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert service["taskDefinitionArgs"]["runtimePlatform"] == {
+            "cpuArchitecture": "ARM64",
+            "operatingSystemFamily": "LINUX",
+        }
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
 def test_make_web_service_keeps_recent_images(sibling, pulumi_mocks):
-    service = make_web_service(
-        backend=pulumi.StackReference("ord/backend/prod"),
-        domain=pulumi.StackReference("ord/domain/prod"),
-        container_port=5173,
-        record_name="app.example.com",
-        listener_rule_priority=200,
-        health_check_path="/api/v1/health",
-        sibling_path=str(sibling),
-        dockerfile=str(sibling / "Dockerfile"),
-        secret_arns=[],
-        enforce_clean=False,
-    )
+    service = _web_service(sibling)
 
     def check(_: object) -> None:
         repository = pulumi_mocks.inputs_of("awsx:ecr:Repository")

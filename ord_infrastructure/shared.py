@@ -27,6 +27,11 @@ import pulumi_awsx as awsx
 # Images a web service's ECR repository keeps: the one it runs and a few to roll back to.
 KEPT_IMAGES = 5
 
+# Web services run on Graviton, which Fargate bills below x86. The image is built for
+# the same architecture, which Docker names arm64 and ECS names ARM64.
+IMAGE_PLATFORM = "linux/arm64"
+CPU_ARCHITECTURE = "ARM64"
+
 
 def assert_sibling_clean(path: str, branch: str = "main") -> None:
     """Fail fast if a sibling repo isn't on `branch` and up to date with origin.
@@ -319,7 +324,7 @@ def make_web_service(
             repository_url=repository.url,
             context=sibling_path,
             dockerfile=dockerfile,
-            platform="linux/amd64",
+            platform=IMAGE_PLATFORM,
             # Stamp the source commit into the image (read back as the
             # org.opencontainers.image.revision label) so a deployed image is traceable
             # to a commit without correlating build timestamps against git history.
@@ -372,6 +377,10 @@ def make_web_service(
             task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
                 execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(
                     role_arn=execution_role.arn
+                ),
+                runtime_platform=aws.ecs.TaskDefinitionRuntimePlatformArgs(
+                    cpu_architecture=CPU_ARCHITECTURE,
+                    operating_system_family="LINUX",
                 ),
                 container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                     name="container",
