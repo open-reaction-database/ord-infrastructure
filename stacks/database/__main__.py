@@ -34,7 +34,6 @@ TUNNEL_PORT = 15432
 # database built by the ord-schema 0.8 ORM pipeline, named for the date its load
 # completed.
 DATABASES = ["app", "ord_20260702", "editor"]
-PROD_DATABASES = {"app", "ord_20260702", "editor"}
 
 # Databases that already exist on the cluster and must be adopted in place rather than
 # created — a create would fail against the live database, and a replace would drop it.
@@ -99,9 +98,9 @@ databases = {
         owner="ord",
         opts=pulumi.ResourceOptions(
             provider=maintenance_provider,
-            # A database holding real data is protected, so removing it from
-            # DATABASES fails until it is unprotected (see README).
-            protect=db in PROD_DATABASES,
+            # Every database holds real data, so removing one from DATABASES fails
+            # until it is unprotected (see README).
+            protect=True,
             # A database's import id is its name.
             import_=db if db in IMPORT_DATABASES else None,
         ),
