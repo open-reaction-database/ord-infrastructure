@@ -29,11 +29,11 @@ backend = pulumi.StackReference("ord/backend/prod")
 TUNNEL_HOST = "localhost"
 TUNNEL_PORT = 15432
 
-# Every application database in the cluster. The databases holding real data are
-# protected; app_staging is the disposable staging database. The read-only role is
-# granted across all of them. `ord_20260702` is the search database built by the
-# ord-schema 0.8 ORM pipeline, named for the date its load completed.
-DATABASES = ["app", "ord_20260702", "editor", "app_staging"]
+# Every application database in the cluster; each holds real data and is protected.
+# The read-only role is granted across all of them. `ord_20260702` is the search
+# database built by the ord-schema 0.8 ORM pipeline, named for the date its load
+# completed.
+DATABASES = ["app", "ord_20260702", "editor"]
 PROD_DATABASES = {"app", "ord_20260702", "editor"}
 
 # Databases that already exist on the cluster and must be adopted in place rather than
@@ -45,8 +45,7 @@ IMPORT_DATABASES = set()
 # there for all of them. The search database also keeps tables in non-public
 # schemas, so the role needs USAGE + SELECT on those too: `ord` (ord-schema's ORM
 # tables), `rdkit` (the cartridge), and `derived` (generated SMILES and RDKit links).
-# The Alembic-managed app databases (app, app_staging) and the editor database use
-# public only.
+# The Alembic-managed app database and the editor database use public only.
 EXTRA_READONLY_SCHEMAS = {
     "ord_20260702": ["ord", "rdkit", "derived"],
 }
@@ -91,9 +90,8 @@ maintenance_provider = postgresql.Provider(
     superuser=False,
 )
 
-# Manage every application database. The pre-existing ones are imported and
-# protected so Pulumi adopts them in place without recreating (a replace would drop
-# the data); app_staging is created fresh.
+# Manage every application database. They were imported and protected so Pulumi
+# adopts them in place without recreating (a replace would drop the data).
 databases = {
     db: postgresql.Database(
         f"db_{db}",
@@ -101,9 +99,8 @@ databases = {
         owner="ord",
         opts=pulumi.ResourceOptions(
             provider=maintenance_provider,
-            # Existing databases hold real data — protect them. app_staging is
-            # disposable test data, so leave it unprotected: retiring staging is
-            # then just removing it here + `pulumi up`, with no unprotect step.
+            # A database holding real data is protected, so removing it from
+            # DATABASES fails until it is unprotected (see README).
             protect=db in PROD_DATABASES,
             # A database's import id is its name.
             import_=db if db in IMPORT_DATABASES else None,

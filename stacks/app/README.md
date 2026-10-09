@@ -6,11 +6,13 @@ load balancer, ECR image, and DNS. It has two stacks:
 | Stack | URL | Database | Image source |
 |---|---|---|---|
 | `ord/prod` | `app.open-reaction-database.org` | `app` | sibling repo on clean `main` |
-| `ord/staging` | `app-staging.open-reaction-database.org` | `app_staging` | sibling repo, **any branch** |
+| `ord/staging` | `app-staging.open-reaction-database.org` | `app` (prod's) | sibling repo, **any branch** |
 
 Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
-`subdomain`, `database`, and `enforce_clean`. Prod uses the defaults, so it needs
-no config; staging overrides all three.
+`subdomain`, `database`, `enforce_clean`, `listener_rule_priority`, `cpu`, and
+`memory`. Prod uses the defaults, so it needs no config; staging overrides
+`subdomain`, `enforce_clean`, and `listener_rule_priority`, and keeps prod's
+`database`, `cpu`, and `memory`.
 
 The Auth0 tenant domain and the ORD App client ID come from the
 [`auth` stack](../auth/README.md), which owns that client. The image build receives
@@ -51,9 +53,9 @@ pulumi -C stacks/app destroy --stack ord/staging
 
 Auth0 already lists `app-staging.open-reaction-database.org` as an allowed
 callback/logout URL (see `stacks/auth`), so login works against staging without
-further changes. The `app_staging` database is managed by the `database` stack;
-its schema is created by running ord-app's Alembic migrations against it.
+further changes. Staging uses prod's `app` database, so it reads and writes prod's
+data. A branch that adds an Alembic migration needs that migration applied to `app`
+before it runs on staging.
 
-> Tearing down staging leaves the `app_staging` database (managed by the
-> `database` stack) and the Auth0 callback URL in place — only the compute, the
+> Tearing down staging leaves the Auth0 callback URL in place — only the compute, the
 > listener rule, and DNS for staging are removed.

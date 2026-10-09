@@ -15,10 +15,8 @@
 config:
   aws:region: us-east-1
   app:subdomain: app-staging
-  app:database: app_staging
+  # No app:database, app:cpu, or app:memory, so staging uses prod's `app` database and
+  # prod's task size: a build runs against prod's data and accounts, at prod's size.
   # Deploy whatever branch is checked out in ord-app, not just a clean main.
   app:enforce_clean: "false"
-  # Smaller than prod — plenty for a test environment.
-  app:cpu: "1024"
-  app:memory: "2048"
   app:listener_rule_priority: "300"
