@@ -54,8 +54,8 @@ extend the `readonly` grants to a new database, add its name to `DATABASES` in
 `__main__.py` and re-run `up` with the tunnel open.
 
 Because the database already exists, also add it to `IMPORT_DATABASES` so Pulumi
-adopts it in place instead of trying to create it, and to `PROD_DATABASES` if it
-holds data worth protecting. Check `preview` before running `up`: the plan must
+adopts it in place instead of trying to create it; every database is protected.
+Check `preview` before running `up`: the plan must
 show `import` for the new database, never `replace` (a replace drops it). Remove
 the name from `IMPORT_DATABASES` after `up` records it in state. If the database
 keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
@@ -63,9 +63,8 @@ keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
 ## Removing a database
 
 Removing a database from `DATABASES` makes `up` revoke its grants and drop it.
-Remove it from `PROD_DATABASES` and `EXTRA_READONLY_SCHEMAS` too. A database in
-`PROD_DATABASES` is protected in state, so `up` refuses to delete it until it is
-unprotected:
+Remove it from `EXTRA_READONLY_SCHEMAS` too. Every database is protected in state,
+so `up` refuses to delete it until it is unprotected:
 
 ```sh
 pulumi -C stacks/database state unprotect --stack ord/prod \
