@@ -24,6 +24,9 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 
+# Images a web service's ECR repository keeps: the one it runs and a few to roll back to.
+KEPT_IMAGES = 5
+
 
 def assert_sibling_clean(path: str, branch: str = "main") -> None:
     """Fail fast if a sibling repo isn't on `branch` and up to date with origin.
@@ -283,9 +286,29 @@ def make_web_service(
         target_group.arn, listener_rule.arn
     ).apply(lambda arns: arns[0])  # ty: ignore[missing-argument, invalid-argument-type]
 
+    # Untagged images beyond the newest are expired, and so is anything beyond the
+    # newest KEPT_IMAGES, which leaves the running image and a few to roll back to.
     repository = awsx.ecr.Repository(
         "repository",
-        awsx.ecr.RepositoryArgs(force_delete=True),
+        awsx.ecr.RepositoryArgs(
+            force_delete=True,
+            lifecycle_policy=awsx.ecr.LifecyclePolicyArgs(
+                rules=[
+                    awsx.ecr.LifecyclePolicyRuleArgs(
+                        tag_status=awsx.ecr.LifecycleTagStatus.UNTAGGED,
+                        maximum_number_of_images=1,
+                        description="remove untagged images",
+                    ),
+                    # awsx's rules select tagged images only by tag prefix, and these
+                    # tags start with a hash, so the cap applies to every image.
+                    awsx.ecr.LifecyclePolicyRuleArgs(
+                        tag_status=awsx.ecr.LifecycleTagStatus.ANY,
+                        maximum_number_of_images=KEPT_IMAGES,
+                        description=f"keep the {KEPT_IMAGES} most recent images",
+                    ),
+                ]
+            ),
+        ),
     )
 
     if enforce_clean:
