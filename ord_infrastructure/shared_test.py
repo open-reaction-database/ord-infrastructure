@@ -154,7 +154,7 @@ def test_sibling_head_returns_unknown_outside_a_repo(tmp_path):
 
 
 def _web_service(sibling: pathlib.Path, **kwargs) -> awsx.ecs.FargateService:
-    """Calls make_web_service on `sibling`, with `kwargs` added to its arguments."""
+    """Call make_web_service on `sibling`, adding `kwargs` to the shared arguments."""
     return make_web_service(
         backend=pulumi.StackReference("ord/backend/prod"),
         domain=pulumi.StackReference("ord/domain/prod"),
