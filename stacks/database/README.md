@@ -55,10 +55,10 @@ extend the `readonly` grants to a new database, add its name to `DATABASES` in
 
 Because the database already exists, also add it to `IMPORT_DATABASES` so Pulumi
 adopts it in place instead of trying to create it; every database is protected.
-Check `preview` before running `up`: the plan must
-show `import` for the new database, never `replace` (a replace drops it). Remove
-the name from `IMPORT_DATABASES` after `up` records it in state. If the database
-keeps tables outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
+Check `preview` before running `up`: the plan must show `import` for the new
+database, never `replace` (a replace drops it). Remove the name from
+`IMPORT_DATABASES` after `up` records it in state. If the database keeps tables
+outside `public`, list those schemas in `EXTRA_READONLY_SCHEMAS`.
 
 ## Removing a database
 
