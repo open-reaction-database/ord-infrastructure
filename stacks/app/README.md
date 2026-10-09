@@ -9,9 +9,10 @@ load balancer, ECR image, and DNS. It has two stacks:
 | `ord/staging` | `app-staging.open-reaction-database.org` | `app` (prod's) | sibling repo, **any branch** |
 
 Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
-`subdomain`, `database`, and `enforce_clean`. Prod uses the defaults, so it needs
-no config; staging overrides `subdomain` and `enforce_clean` and keeps prod's
-`database` and task size (`cpu`, `memory`).
+`subdomain`, `database`, `enforce_clean`, `listener_rule_priority`, `cpu`, and
+`memory`. Prod uses the defaults, so it needs no config; staging overrides
+`subdomain`, `enforce_clean`, and `listener_rule_priority`, and keeps prod's
+`database`, `cpu`, and `memory`.
 
 The Auth0 tenant domain and the ORD App client ID come from the
 [`auth` stack](../auth/README.md), which owns that client. The image build receives
