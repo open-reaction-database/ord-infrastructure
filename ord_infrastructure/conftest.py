@@ -19,6 +19,9 @@ from typing import ClassVar
 import pulumi
 import pytest
 
+# Per resource type, outputs that are references to other resources.
+RESOURCE_OUTPUTS = {"awsx:ecr:Repository": ("lifecyclePolicy",)}
+
 
 class RecordingMocks(pulumi.runtime.Mocks):
     """Records the inputs of every resource registered, without creating any."""
@@ -63,7 +66,12 @@ class RecordingMocks(pulumi.runtime.Mocks):
             },
             "random:index/randomPassword:RandomPassword": {"result": "generated"},
         }
-        return f"{args.name}_id", dict(args.inputs) | computed.get(args.typ, {})
+        outputs = dict(args.inputs) | computed.get(args.typ, {})
+        # An output the SDK reads as a reference to another resource, which an echoed
+        # input cannot stand in for.
+        for name in RESOURCE_OUTPUTS.get(args.typ, ()):
+            outputs.pop(name, None)
+        return f"{args.name}_id", outputs
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> tuple[dict, list | None]:
         return {}, None
