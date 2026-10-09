@@ -16,8 +16,8 @@
 
 Per-environment knobs come from stack config; the defaults are the prod values, so
 the prod stack needs no config. The `staging` stack overrides them (see
-Pulumi.staging.yaml) to serve app-staging.open-reaction-database.org from the
-app_staging database, built from whatever branch is checked out.
+Pulumi.staging.yaml) to serve app-staging.open-reaction-database.org from prod's
+database, built from whatever branch is checked out.
 """
 
 import pulumi

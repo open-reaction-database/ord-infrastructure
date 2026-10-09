@@ -57,5 +57,4 @@ data. A branch that adds an Alembic migration needs that migration applied to `a
 before it runs on staging.
 
 > Tearing down staging leaves the Auth0 callback URL in place — only the compute, the
-> listener rule, and DNS for staging are removed. The `database` stack still manages
-> an `app_staging` database, which staging does not use.
+> listener rule, and DNS for staging are removed.

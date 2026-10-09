@@ -15,8 +15,7 @@ dependency is quarantined here, in the one stack that actually needs it.
 ## What it manages
 
 - The application **databases**: `app`, `ord_20260702`, and `editor` (imported and
-  `protect`ed — they hold data, so they're adopted in place, never recreated) plus
-  `app_staging` (created here, for the staging app).
+  `protect`ed — they hold data, so they're adopted in place, never recreated).
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
