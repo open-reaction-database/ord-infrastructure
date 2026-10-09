@@ -299,8 +299,8 @@ def make_web_service(
                         maximum_number_of_images=1,
                         description="remove untagged images",
                     ),
-                    # ECR matches tagged images only by tag prefix, and these tags start
-                    # with a hash, so the cap applies to every image.
+                    # awsx's rules select tagged images only by tag prefix, and these
+                    # tags start with a hash, so the cap applies to every image.
                     awsx.ecr.LifecyclePolicyRuleArgs(
                         tag_status=awsx.ecr.LifecycleTagStatus.ANY,
                         maximum_number_of_images=KEPT_IMAGES,
