@@ -188,6 +188,39 @@ def test_make_web_service_passes_build_args_and_environment(sibling, pulumi_mock
     return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
 
 
+@pulumi.runtime.test
+def test_make_web_service_keeps_recent_images(sibling, pulumi_mocks):
+    service = make_web_service(
+        backend=pulumi.StackReference("ord/backend/prod"),
+        domain=pulumi.StackReference("ord/domain/prod"),
+        container_port=5173,
+        record_name="app.example.com",
+        listener_rule_priority=200,
+        health_check_path="/api/v1/health",
+        sibling_path=str(sibling),
+        dockerfile=str(sibling / "Dockerfile"),
+        secret_arns=[],
+        enforce_clean=False,
+    )
+
+    def check(_: object) -> None:
+        repository = pulumi_mocks.inputs_of("awsx:ecr:Repository")
+        assert repository["lifecyclePolicy"]["rules"] == [
+            {
+                "tagStatus": "untagged",
+                "maximumNumberOfImages": 1,
+                "description": "remove untagged images",
+            },
+            {
+                "tagStatus": "any",
+                "maximumNumberOfImages": 5,
+                "description": "keep the 5 most recent images",
+            },
+        ]
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
 def test_make_web_service_rejects_too_long_name_prefix():
     # The guard runs before any resource is constructed, so this needs no Pulumi
     # runtime or mocks.
