@@ -25,7 +25,8 @@ from ord_infrastructure import shared
 
 STACKS = pathlib.Path(__file__).parent.parent / "stacks"
 
-# ord-app's image build fails unless every one of these is set (ui/vite.config.ts).
+# ord-app's image build fails unless every one of these is set
+# (frontend/apps/editor/vite.config.ts in ord-app).
 AUTH0_BUILD_ARGS = (
     "VITE_AUTH0_DOMAIN",
     "VITE_AUTH0_CLIENT_ID",
