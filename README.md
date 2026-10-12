@@ -63,11 +63,11 @@ pulumi preview --stack ord/prod   # show planned changes
 pulumi up      --stack ord/prod   # apply
 ```
 
-Always run `preview` first and review the diff. The `prod` stack is the only stack that exists today — there is no separate dev/staging.
+Always run `preview` first and review the diff. Every project has a `prod` stack, and `stacks/app` also has a `staging` stack; see [`stacks/app/README.md`](stacks/app/README.md).
 
 ### Building images from sibling repos
 
-`stacks/app` and `stacks/interface` build their docker images from the sibling repos at `~/github/ord/ord-app` and `~/github/ord/ord-interface`. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
+`stacks/app` and `stacks/interface` build their docker images from the sibling checkouts `../ord-app` and `../ord-interface`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
 
 To bypass the check for a local hotfix:
 

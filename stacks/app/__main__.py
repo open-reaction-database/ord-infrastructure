@@ -98,7 +98,7 @@ make_web_service(
     # Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
     health_check_path="/api/v1/canonicalize-smiles?smiles=C",
     sibling_path="../../../ord-app",
-    dockerfile="../../../ord-app/Dockerfile.single",
+    dockerfile="../../../ord-app/deploy/editor/Dockerfile",
     secret_arns=[
         backend.get_output("rds_password_secret_arn"),
         download_link_secret.arn,
