@@ -14,6 +14,7 @@
 
 """Tests that run the stack programs under Pulumi mocks (see conftest.py)."""
 
+import json
 import pathlib
 import re
 import runpy
@@ -231,13 +232,15 @@ def test_viewer_stack_gives_ask_the_configured_key(pulumi_mocks, services, monke
             secret["name"]: secret["valueFrom"]
             for secret in service["taskDefinitionArgs"]["container"]["secrets"]
         }
-        assert secrets == {"ORD_ANTHROPIC_API_KEY": secret_arn}
+        # Pinned to the version, so a new key changes the task definition.
+        assert secrets == {
+            "ORD_ANTHROPIC_API_KEY": (
+                f"{secret_arn}:::anthropic_api_key_version-version-id"
+            )
+        }
+        # The role reads the secret by its ARN, whichever version a task names.
         policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
-        assert secret_arn in policy
+        assert json.loads(policy)["Statement"][0]["Resource"] == [secret_arn]
 
-    ((service, arguments),) = services
-    assert any(
-        isinstance(resource, aws.secretsmanager.SecretVersion)
-        for resource in arguments["depends_on"]
-    )
+    ((service, _),) = services
     return service.urn.apply(check)

@@ -61,7 +61,6 @@ config = pulumi.Config()
 anthropic_api_key = config.get_secret("anthropic_api_key")
 secret_arns = []
 secrets = []
-depends_on = []
 if anthropic_api_key is not None:
     # Named by prefix: a deleted secret holds its name through its recovery window, so
     # a fixed name would block creating the secret again.
@@ -74,13 +73,19 @@ if anthropic_api_key is not None:
         secret_string=anthropic_api_key,
     )
     secret_arns.append(anthropic_api_key_secret.arn)
+    # A task reads its secrets once, when it starts. Naming the version (after the
+    # empty JSON key and version stage) puts each new key in a new task definition,
+    # which replaces the running tasks, and makes the service wait for the version.
     secrets.append(
         awsx.ecs.TaskDefinitionSecretArgs(
-            name="ORD_ANTHROPIC_API_KEY", value_from=anthropic_api_key_secret.arn
+            name="ORD_ANTHROPIC_API_KEY",
+            value_from=pulumi.Output.format(
+                "{0}:::{1}",
+                anthropic_api_key_secret.arn,
+                anthropic_api_key_version.version_id,
+            ),
         )
     )
-    # A task resolves its secrets when it starts, so the secret needs a value first.
-    depends_on.append(anthropic_api_key_version)
 
 environment = {
     "ORD_VIEWER_CORPUS_DIR": CORPUS_DIR,
@@ -109,7 +114,6 @@ make_web_service(
     cpu=CPU,
     memory=MEMORY,
     cluster_name="viewer",
-    depends_on=depends_on,
     health_check_grace_period_seconds=HEALTH_CHECK_GRACE_PERIOD_SECONDS,
     ephemeral_storage_gib=EPHEMERAL_STORAGE_GIB,
 )

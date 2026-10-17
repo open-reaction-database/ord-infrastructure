@@ -26,7 +26,7 @@ A task starts serving only once it has fetched and opened its corpus, so a deplo
 
 ## /api/ask
 
-`/api/ask` calls a model with the key in the stack's `anthropic_api_key` config secret, which the stack stores in Secrets Manager and injects as `ORD_ANTHROPIC_API_KEY`. Without it, the stack makes no secret and `/api/ask` answers 503, while every other route works. To set it, from this directory:
+`/api/ask` calls a model with the key in the stack's `anthropic_api_key` config secret, which the stack stores in Secrets Manager and injects as `ORD_ANTHROPIC_API_KEY`. Without it, the stack makes no secret and `/api/ask` answers 503, while every other route works. The task names the secret's version, so a new key reaches the service on the next `up`, which replaces the running tasks. To set it, from this directory:
 
 ```sh
 pulumi config set --secret anthropic_api_key --stack ord/prod

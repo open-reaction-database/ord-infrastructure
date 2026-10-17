@@ -64,6 +64,9 @@ class RecordingMocks(pulumi.runtime.Mocks):
             "aws:secretsmanager/secret:Secret": {
                 "arn": f"arn:aws:secretsmanager:secret/{args.name}"
             },
+            "aws:secretsmanager/secretVersion:SecretVersion": {
+                "versionId": f"{args.name}-version-id"
+            },
             "random:index/randomPassword:RandomPassword": {"result": "generated"},
         }
         outputs = dict(args.inputs) | computed.get(args.typ, {})
