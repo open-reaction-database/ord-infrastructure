@@ -193,7 +193,7 @@ def test_viewer_stack_serves_a_pinned_corpus(pulumi_mocks, services, monkeypatch
 
 @pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
 @pulumi.runtime.test
-def test_viewer_stack_needs_no_anthropic_key(pulumi_mocks, services, monkeypatch):
+def test_viewer_stack_needs_no_config_secrets(pulumi_mocks, services, monkeypatch):
     _run_viewer_stack(monkeypatch)
 
     def check(_: object) -> None:
@@ -215,32 +215,60 @@ def test_viewer_stack_needs_no_anthropic_key(pulumi_mocks, services, monkeypatch
     return service.urn.apply(check)
 
 
+@pytest.mark.parametrize(
+    ("key", "variable"),
+    [("anthropic_api_key", "ORD_ANTHROPIC_API_KEY"), ("hf_token", "HF_TOKEN")],
+)
 @pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
 @pulumi.runtime.test
-def test_viewer_stack_gives_ask_the_configured_key(pulumi_mocks, services, monkeypatch):
-    _run_viewer_stack(monkeypatch, {"viewer:anthropic_api_key": "sk-test"})
+def test_viewer_stack_injects_a_configured_secret(
+    key, variable, pulumi_mocks, services, monkeypatch
+):
+    _run_viewer_stack(monkeypatch, {f"viewer:{key}": "s3cret"})
 
     def check(_: object) -> None:
-        secret_arn = "arn:aws:secretsmanager:secret/anthropic_api_key_secret"
+        secret_arn = f"arn:aws:secretsmanager:secret/{key}_secret"
         version = pulumi_mocks.inputs_of(
             "aws:secretsmanager/secretVersion:SecretVersion"
         )
         # A config secret stays a Pulumi secret, so it arrives wrapped.
-        assert version["secretString"]["value"] == "sk-test"
+        assert version["secretString"]["value"] == "s3cret"
         service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
         secrets = {
             secret["name"]: secret["valueFrom"]
             for secret in service["taskDefinitionArgs"]["container"]["secrets"]
         }
-        # Pinned to the version, so a new key changes the task definition.
-        assert secrets == {
-            "ORD_ANTHROPIC_API_KEY": (
-                f"{secret_arn}:::anthropic_api_key_version-version-id"
-            )
-        }
+        # Pinned to the version, so a new value changes the task definition.
+        assert secrets == {variable: f"{secret_arn}:::{key}_version-version-id"}
         # The role reads the secret by its ARN, whichever version a task names.
         policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
         assert json.loads(policy)["Statement"][0]["Resource"] == [secret_arn]
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_injects_every_configured_secret(
+    pulumi_mocks, services, monkeypatch
+):
+    _run_viewer_stack(
+        monkeypatch, {"viewer:anthropic_api_key": "key", "viewer:hf_token": "token"}
+    )
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        secrets = service["taskDefinitionArgs"]["container"]["secrets"]
+        assert {secret["name"] for secret in secrets} == {
+            "ORD_ANTHROPIC_API_KEY",
+            "HF_TOKEN",
+        }
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        assert sorted(json.loads(policy)["Statement"][0]["Resource"]) == [
+            "arn:aws:secretsmanager:secret/anthropic_api_key_secret",
+            "arn:aws:secretsmanager:secret/hf_token_secret",
+        ]
 
     ((service, _),) = services
     return service.urn.apply(check)

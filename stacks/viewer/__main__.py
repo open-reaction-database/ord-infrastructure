@@ -55,34 +55,39 @@ HEALTH_CHECK_GRACE_PERIOD_SECONDS = 30 * 60
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
 
-# The key /api/ask calls the model with, an encrypted Pulumi config secret. Without it
-# the stack makes no secret, and /api/ask answers 503 while every other route works.
+# Optional encrypted Pulumi config secrets, by config key, and the variable each
+# reaches the task as. Without the Anthropic key, /api/ask answers 503 while every
+# other route works; without the Hugging Face token, the startup fetch runs under
+# Hugging Face's rate limits for unauthenticated requests.
+CONFIG_SECRETS = {
+    "anthropic_api_key": "ORD_ANTHROPIC_API_KEY",
+    "hf_token": "HF_TOKEN",
+}
+
 config = pulumi.Config()
-anthropic_api_key = config.get_secret("anthropic_api_key")
 secret_arns = []
 secrets = []
-if anthropic_api_key is not None:
+for key, variable in CONFIG_SECRETS.items():
+    value = config.get_secret(key)
+    if value is None:
+        continue
     # Named by prefix: a deleted secret holds its name through its recovery window, so
     # a fixed name would block creating the secret again.
-    anthropic_api_key_secret = aws.secretsmanager.Secret(
-        "anthropic_api_key_secret", name_prefix="ord-viewer-anthropic-api-key-"
+    secret = aws.secretsmanager.Secret(
+        f"{key}_secret", name_prefix=f"ord-viewer-{key.replace('_', '-')}-"
     )
-    anthropic_api_key_version = aws.secretsmanager.SecretVersion(
-        "anthropic_api_key_version",
-        secret_id=anthropic_api_key_secret.id,
-        secret_string=anthropic_api_key,
+    version = aws.secretsmanager.SecretVersion(
+        f"{key}_version", secret_id=secret.id, secret_string=value
     )
-    secret_arns.append(anthropic_api_key_secret.arn)
+    secret_arns.append(secret.arn)
     # A task reads its secrets once, when it starts. Naming the version (after the
-    # empty JSON key and version stage) puts each new key in a new task definition,
+    # empty JSON key and version stage) puts each new value in a new task definition,
     # which replaces the running tasks, and makes the service wait for the version.
     secrets.append(
         awsx.ecs.TaskDefinitionSecretArgs(
-            name="ORD_ANTHROPIC_API_KEY",
+            name=variable,
             value_from=pulumi.Output.format(
-                "{0}:::{1}",
-                anthropic_api_key_secret.arn,
-                anthropic_api_key_version.version_id,
+                "{0}:::{1}", secret.arn, version.version_id
             ),
         )
     )
