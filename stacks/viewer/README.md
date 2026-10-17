@@ -40,3 +40,12 @@ pulumi up      --stack ord/prod
 ```
 
 `up` waits for the service to reach a steady state, which includes the new task's cold start, for up to the provider's 20-minute default for an ECS service. If a start outlasts that, `up` fails while ECS goes on starting the task; run `up` again once the service is healthy.
+
+### The apex
+
+This stack owns the apex's Route 53 alias record and priority 100 on the backend's shared HTTPS listener. Another stack holding either makes `up` fail: the listener rule's priority is taken, and the record already exists. Retire that stack before the first `up` here, from its own project directory, and expect the apex to be down until the viewer's first task passes its health check:
+
+```sh
+pulumi destroy --stack ord/prod
+pulumi stack rm ord/prod
+```
