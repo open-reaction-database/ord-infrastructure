@@ -26,8 +26,8 @@ RESOURCE_OUTPUTS = {"awsx:ecr:Repository": ("lifecyclePolicy",)}
 class RecordingMocks(pulumi.runtime.Mocks):
     """Records the inputs of every resource registered, without creating any."""
 
-    # The outputs the app stack and make_web_service read, per stack, so a value read
-    # from the wrong stack comes back missing.
+    # The outputs the stack programs and make_web_service read, per stack, so a value
+    # read from the wrong stack comes back missing.
     STACK_OUTPUTS: ClassVar[dict[str, dict[str, object]]] = {
         "ord/backend/prod": {
             "vpc_id": "vpc-0",
@@ -64,6 +64,9 @@ class RecordingMocks(pulumi.runtime.Mocks):
             "aws:secretsmanager/secret:Secret": {
                 "arn": f"arn:aws:secretsmanager:secret/{args.name}"
             },
+            "aws:secretsmanager/secretVersion:SecretVersion": {
+                "versionId": f"{args.name}-version-id"
+            },
             "random:index/randomPassword:RandomPassword": {"result": "generated"},
         }
         outputs = dict(args.inputs) | computed.get(args.typ, {})
@@ -83,8 +86,13 @@ class RecordingMocks(pulumi.runtime.Mocks):
 
 
 @pytest.fixture
-def pulumi_mocks() -> RecordingMocks:
+def pulumi_mocks(request) -> RecordingMocks:
+    """Installs recording mocks named for a project: editor, or the test's parameter.
+
+    A stack program reads its config from its project's namespace, so a test of the
+    viewer's program parametrizes this fixture indirectly with ``"viewer"``.
+    """
     mocks = RecordingMocks()
-    # Named like the app stack, so its program reads its own config namespace.
-    pulumi.runtime.set_mocks(mocks, project="app", stack="prod", preview=False)
+    project = getattr(request, "param", "editor")
+    pulumi.runtime.set_mocks(mocks, project=project, stack="prod", preview=False)
     return mocks

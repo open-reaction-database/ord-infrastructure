@@ -11,14 +11,15 @@ ord-infrastructure/
 │   ├── domain/              # Route 53 hosted zone and ACM certificates
 │   ├── backend/             # VPC, RDS Aurora, Valkey, bastion (see backend/README.md)
 │   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
-│   ├── app/                 # ECS service, listener rule, task definitions for ord-app
-│   └── interface/           # ECS service, listener rule, task definitions for ord-interface
+│   ├── auth/                # Auth0 resources: the ORD App client (see auth/README.md)
+│   ├── editor/              # ECS service, listener rule, task definitions for ord-app's editor
+│   └── viewer/              # ECS service, listener rule, task definitions for ord-app's viewer
 ├── ord_infrastructure/      # Installable Python package of helpers shared across stacks
-│   └── shared.py            # assert_sibling_clean, make_ecs_execution_role
+│   └── shared.py            # assert_sibling_clean, make_web_service, make_ecs_execution_role
 └── pyproject.toml           # Build config for ord_infrastructure + tool config (ruff, ty)
 ```
 
-Each project has its own stack (`ord/<project>/prod`) and is deployed independently. Stack-to-stack references go through Pulumi `StackReference` (e.g. `app` reads outputs from `backend` and `domain`).
+Each project has its own stack (`ord/<project>/prod`) and is deployed independently. Stack-to-stack references go through Pulumi `StackReference` (e.g. `editor` reads outputs from `backend` and `domain`).
 
 ## Prerequisites
 
@@ -50,9 +51,9 @@ uv sync --locked   # installs ord_infrastructure + dev deps into .venv
 uv run pytest
 ```
 
-The suite covers the deploy-time guards in [`ord_infrastructure/shared.py`](ord_infrastructure/shared.py) — the sibling-repo cleanliness check, the image provenance stamp, and the target-group name-length limit — against throwaway git repositories. It needs no AWS credentials and no Pulumi runtime.
+The suite covers the deploy-time guards in [`ord_infrastructure/shared.py`](ord_infrastructure/shared.py) — the sibling-repo cleanliness check, the image provenance stamp, and the target-group name-length limit — against throwaway git repositories. Under Pulumi mocks ([`conftest.py`](ord_infrastructure/conftest.py)), it checks what `make_web_service` builds, and [`stacks_test.py`](ord_infrastructure/stacks_test.py) runs the `editor` and `viewer` programs and checks what they pass it. It needs no AWS credentials and no Pulumi runtime.
 
-The `stacks/` programs are not unit tested: they construct resources at import time, so `pulumi preview` is what validates them. Review the preview diff before every `up`.
+The mocks create nothing, so `pulumi preview` is still what validates a change against AWS. Review the preview diff before every `up`.
 
 ## Deploying
 
@@ -63,11 +64,11 @@ pulumi preview --stack ord/prod   # show planned changes
 pulumi up      --stack ord/prod   # apply
 ```
 
-Always run `preview` first and review the diff. Every project has a `prod` stack, and `stacks/app` also has a `staging` stack; see [`stacks/app/README.md`](stacks/app/README.md).
+Always run `preview` first and review the diff. Every project has a `prod` stack, and `stacks/editor` also has a `staging` stack; see [`stacks/editor/README.md`](stacks/editor/README.md).
 
 ### Building images from sibling repos
 
-`stacks/app` and `stacks/interface` build their docker images from the sibling checkouts `../ord-app` and `../ord-interface`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
+`stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
 
 To bypass the check for a local hotfix:
 
@@ -93,8 +94,9 @@ When bringing the stacks up from scratch:
 2. `domain` — DNS + certs
 3. `backend` — VPC, database, cache (other stacks depend on its outputs via stack references)
 4. `database` — in-DB roles/grants; requires the bastion tunnel open (see `database/README.md`)
-5. `app`
-6. `interface`
+5. `auth` — the Auth0 client `editor` builds against
+6. `editor`
+7. `viewer`
 
 For routine changes, deploy only the project you modified.
 

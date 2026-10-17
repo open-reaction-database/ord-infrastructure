@@ -14,7 +14,9 @@
 
 """Tests that run the stack programs under Pulumi mocks (see conftest.py)."""
 
+import json
 import pathlib
+import re
 import runpy
 
 import pulumi
@@ -52,12 +54,12 @@ def services(monkeypatch) -> list[tuple[pulumi.Resource, dict[str, object]]]:
 
 
 @pulumi.runtime.test
-def test_app_stack_passes_auth0_settings_to_build_and_task(
+def test_editor_stack_passes_auth0_settings_to_build_and_task(
     pulumi_mocks, services, monkeypatch
 ):
     # The clean-main gate would inspect the developer's ord-app checkout.
-    pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-    monkeypatch.chdir(STACKS / "app")
+    pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+    monkeypatch.chdir(STACKS / "editor")
     runpy.run_path("__main__.py")
 
     def check(_: object) -> None:
@@ -85,7 +87,7 @@ def test_app_stack_passes_auth0_settings_to_build_and_task(
 
 
 @pytest.mark.parametrize("missing", ["domain", "ord_app_client_id"])
-def test_app_stack_fails_without_an_auth_output(
+def test_editor_stack_fails_without_an_auth_output(
     missing, pulumi_mocks, services, monkeypatch
 ):
     outputs = dict(pulumi_mocks.STACK_OUTPUTS["ord/auth/prod"])
@@ -94,8 +96,8 @@ def test_app_stack_fails_without_an_auth_output(
 
     @pulumi.runtime.test
     def run() -> pulumi.Output:
-        pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-        monkeypatch.chdir(STACKS / "app")
+        pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+        monkeypatch.chdir(STACKS / "editor")
         runpy.run_path("__main__.py")
         ((service, _),) = services
         return service.urn
@@ -105,11 +107,11 @@ def test_app_stack_fails_without_an_auth_output(
 
 
 @pulumi.runtime.test
-def test_app_stack_gives_the_task_a_download_link_key(
+def test_editor_stack_gives_the_task_a_download_link_key(
     pulumi_mocks, services, monkeypatch
 ):
-    pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-    monkeypatch.chdir(STACKS / "app")
+    pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+    monkeypatch.chdir(STACKS / "editor")
     runpy.run_path("__main__.py")
 
     def check(_: object) -> None:
@@ -135,4 +137,138 @@ def test_app_stack_gives_the_task_a_download_link_key(
         isinstance(resource, aws.secretsmanager.SecretVersion)
         for resource in arguments["depends_on"]
     )
+    return service.urn.apply(check)
+
+
+def _run_viewer_stack(monkeypatch, config: dict[str, str] | None = None) -> None:
+    """Run the viewer's stack program under the mocks, with `config` as its config."""
+    # The clean-main gate would inspect the developer's ord-app checkout.
+    monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
+    pulumi.runtime.set_all_config(config or {})
+    monkeypatch.chdir(STACKS / "viewer")
+    runpy.run_path("__main__.py")
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_serves_a_pinned_corpus(pulumi_mocks, services, monkeypatch):
+    _run_viewer_stack(monkeypatch)
+
+    def check(_: object) -> None:
+        image = pulumi_mocks.inputs_of("awsx:ecr:Image")
+        assert image["dockerfile"] == "../../../ord-app/deploy/viewer/Dockerfile"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        container = service["taskDefinitionArgs"]["container"]
+        environment = {
+            variable["name"]: variable["value"] for variable in container["environment"]
+        }
+        assert environment["ORD_VIEWER_CORPUS_DIR"] == "/app/corpus"
+        # Commits, so every task fetches the same corpus; the viewer refuses one
+        # revision without the other.
+        for name in ("ORD_VIEWER_ARTIFACTS_REVISION", "ORD_VIEWER_SOURCES_REVISION"):
+            assert re.fullmatch("[0-9a-f]{40}", environment[name])
+        # DuckDB's cap leaves the rest of the process room within the task's memory.
+        memory_limit = re.fullmatch(
+            "([0-9]+)MiB", environment["ORD_VIEWER_MEMORY_LIMIT"]
+        )
+        assert memory_limit
+        assert int(memory_limit[1]) < container["memory"]
+        # The corpus is fetched onto the task's storage, so it gets more than Fargate's
+        # default.
+        storage = service["taskDefinitionArgs"]["ephemeralStorage"]["sizeInGib"]
+        assert storage > 20
+        # The API answers its health check only once the corpus is fetched and open.
+        assert service["healthCheckGracePeriodSeconds"] > 0
+        target_group = pulumi_mocks.inputs_of("aws:lb/targetGroup:TargetGroup")
+        assert target_group["healthCheck"]["path"] == "/api/health"
+        # The viewer serves the apex. The alias registers after the service, so the
+        # rule names the host.
+        rule = pulumi_mocks.inputs_of("aws:lb/listenerRule:ListenerRule")
+        (condition,) = rule["conditions"]
+        assert condition["hostHeader"]["values"] == ["example.com"]
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_needs_no_config_secrets(pulumi_mocks, services, monkeypatch):
+    _run_viewer_stack(monkeypatch)
+
+    def check(_: object) -> None:
+        assert not [
+            resource
+            for resource in pulumi_mocks.resources
+            if resource.typ.startswith("aws:secretsmanager/")
+        ]
+        # With no secret to read, the execution role gets no inline policy.
+        assert not [
+            resource
+            for resource in pulumi_mocks.resources
+            if resource.typ == "aws:iam/rolePolicy:RolePolicy"
+        ]
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert not service["taskDefinitionArgs"]["container"].get("secrets")
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize(
+    ("key", "variable"),
+    [("anthropic_api_key", "ORD_ANTHROPIC_API_KEY"), ("hf_token", "HF_TOKEN")],
+)
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_injects_a_configured_secret(
+    key, variable, pulumi_mocks, services, monkeypatch
+):
+    _run_viewer_stack(monkeypatch, {f"viewer:{key}": "s3cret"})
+
+    def check(_: object) -> None:
+        secret_arn = f"arn:aws:secretsmanager:secret/{key}_secret"
+        version = pulumi_mocks.inputs_of(
+            "aws:secretsmanager/secretVersion:SecretVersion"
+        )
+        # A config secret stays a Pulumi secret, so it arrives wrapped.
+        assert version["secretString"]["value"] == "s3cret"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        secrets = {
+            secret["name"]: secret["valueFrom"]
+            for secret in service["taskDefinitionArgs"]["container"]["secrets"]
+        }
+        # Pinned to the version, so a new value changes the task definition.
+        assert secrets == {variable: f"{secret_arn}:::{key}_version-version-id"}
+        # The role reads the secret by its ARN, whichever version a task names.
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        assert json.loads(policy)["Statement"][0]["Resource"] == [secret_arn]
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_injects_every_configured_secret(
+    pulumi_mocks, services, monkeypatch
+):
+    _run_viewer_stack(
+        monkeypatch, {"viewer:anthropic_api_key": "key", "viewer:hf_token": "token"}
+    )
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        secrets = service["taskDefinitionArgs"]["container"]["secrets"]
+        assert {secret["name"] for secret in secrets} == {
+            "ORD_ANTHROPIC_API_KEY",
+            "HF_TOKEN",
+        }
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        assert sorted(json.loads(policy)["Statement"][0]["Resource"]) == [
+            "arn:aws:secretsmanager:secret/anthropic_api_key_secret",
+            "arn:aws:secretsmanager:secret/hf_token_secret",
+        ]
+
+    ((service, _),) = services
     return service.urn.apply(check)

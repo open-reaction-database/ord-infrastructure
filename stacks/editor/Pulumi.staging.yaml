@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: app
-description: ECS Fargate service, ALB, and DNS for ord-app (served at app.open-reaction-database.org).
-runtime:
-  name: python
-  options:
-    virtualenv: venv
+config:
+  aws:region: us-east-1
+  editor:subdomain: app-staging
+  # No editor:database, editor:cpu, or editor:memory, so staging uses prod's `app`
+  # database and prod's task size: a build runs against prod's data and accounts, at
+  # prod's size.
+  # Deploy whatever branch is checked out in ord-app, not just a clean main.
+  editor:enforce_clean: "false"
+  editor:listener_rule_priority: "300"

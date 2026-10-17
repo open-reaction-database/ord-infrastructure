@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: interface
-description: ECS Fargate service, ALB, and DNS for ord-interface (served at the open-reaction-database.org apex).
+name: viewer
+description: ECS Fargate service, ALB, and DNS for the ORD viewer (served at the open-reaction-database.org apex).
 runtime:
   name: python
   options:

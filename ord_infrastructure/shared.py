@@ -123,7 +123,8 @@ def make_ecs_execution_role(
 
     Attaches the AWS-managed AmazonECSTaskExecutionRolePolicy (ECR pulls + CloudWatch Logs)
     plus an inline policy granting secretsmanager:GetSecretValue on each ARN in `secret_arns` —
-    the permissions ECS needs to resolve `secrets[].value_from` at container start.
+    the permissions ECS needs to resolve `secrets[].value_from` at container start. With no
+    ARNs there is no inline policy, since IAM refuses a statement with no resources.
     """
     role = aws.iam.Role(
         name,
@@ -145,6 +146,8 @@ def make_ecs_execution_role(
         role=role.name,
         policy_arn="arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
     )
+    if not secret_arns:
+        return role
 
     def _policy_doc(arns: list[str]) -> str:
         return json.dumps(
@@ -188,17 +191,19 @@ def make_web_service(
     memory: int = 2048,
     cluster_name: str | None = None,
     depends_on: Sequence[pulumi.Resource] | None = None,
+    health_check_grace_period_seconds: int | None = None,
+    ephemeral_storage_gib: int | None = None,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind the shared ALB.
 
-    Builds the full stack shared by the `app` and `interface` projects: a target group
+    Builds the full stack shared by the `editor` and `viewer` projects: a target group
     and a host-header rule on the backend's shared HTTPS listener, a Route 53 alias to
     that load balancer, an ECR image built from a sibling repo (gated by
     `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
 
     Resource names are fixed (e.g. "service", "listener_rule"), so call this at most
-    once per Pulumi project; the URNs stay stable across the two callers because each
-    runs in its own project.
+    once per Pulumi project; the URNs stay stable across callers because each runs in
+    its own project.
 
     Args:
         backend: StackReference to `ord/backend/prod` (VPC, subnets, and the shared
@@ -212,8 +217,8 @@ def make_web_service(
             unique across every service using it.
         health_check_path: Path, with any query string, that the load balancer
             requests to judge a task healthy; only a 200 passes. Point it at an API
-            route that the backend process answers: both images put nginx in front of
-            the API and serve the static UI at `/`, so `/` stays 200 even when the API
+            route that the backend process answers: every image puts nginx in front of
+            the API and serves the static UI at `/`, so `/` stays 200 even when the API
             has failed to start, and a deploy would then replace a working task.
         sibling_path: Path to the sibling repo to build the image from, relative to
             the working directory (the calling stack's project directory).
@@ -238,10 +243,16 @@ def make_web_service(
             Fargate CPU/memory combination.
         memory: Fargate task memory in MiB (default 2048 = 2 GB).
         cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
-            "interface") so clusters are distinguishable in the console. None
+            "viewer") so clusters are distinguishable in the console. None
             auto-generates a "cluster-*" name. Changing it replaces the cluster.
         depends_on: Resources the service must be created after — e.g. a
             SecretVersion that must hold a value before a task resolves its secrets.
+        health_check_grace_period_seconds: Seconds after a task starts during which
+            ECS ignores the load balancer's failed health checks, for a task that takes
+            minutes to begin serving. None leaves ECS's default.
+        ephemeral_storage_gib: The task's ephemeral storage in GiB, shared by the
+            image's layers and whatever the task writes; Fargate allows 21 to 200.
+            None leaves Fargate's default of 20 GiB.
 
     Returns:
         The created FargateService.
@@ -374,6 +385,7 @@ def make_web_service(
                 subnets=backend.get_output("private_subnet_ids"),
                 security_groups=[security_group.id],
             ),
+            health_check_grace_period_seconds=health_check_grace_period_seconds,
             task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
                 execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(
                     role_arn=execution_role.arn
@@ -381,6 +393,13 @@ def make_web_service(
                 runtime_platform=aws.ecs.TaskDefinitionRuntimePlatformArgs(
                     cpu_architecture=CPU_ARCHITECTURE,
                     operating_system_family="LINUX",
+                ),
+                ephemeral_storage=(
+                    None
+                    if ephemeral_storage_gib is None
+                    else aws.ecs.TaskDefinitionEphemeralStorageArgs(
+                        size_in_gib=ephemeral_storage_gib
+                    )
                 ),
                 container=awsx.ecs.TaskDefinitionContainerDefinitionArgs(
                     name="container",

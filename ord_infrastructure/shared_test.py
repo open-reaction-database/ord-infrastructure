@@ -20,8 +20,10 @@ under Pulumi mocks (see conftest.py), what make_web_service passes to the image 
 and the task.
 """
 
+import json
 import pathlib
 import subprocess
+from collections.abc import Sequence
 from typing import cast
 
 import pulumi
@@ -153,7 +155,9 @@ def test_sibling_head_returns_unknown_outside_a_repo(tmp_path):
     assert sibling_head(str(not_a_repo)) == "unknown"
 
 
-def _web_service(sibling: pathlib.Path, **kwargs) -> awsx.ecs.FargateService:
+def _web_service(
+    sibling: pathlib.Path, *, secret_arns: Sequence[str] = (), **kwargs
+) -> awsx.ecs.FargateService:
     """Call make_web_service on `sibling`, adding `kwargs` to the shared arguments."""
     return make_web_service(
         backend=pulumi.StackReference("ord/backend/prod"),
@@ -164,7 +168,7 @@ def _web_service(sibling: pathlib.Path, **kwargs) -> awsx.ecs.FargateService:
         health_check_path="/api/v1/health",
         sibling_path=str(sibling),
         dockerfile=str(sibling / "Dockerfile"),
-        secret_arns=[],
+        secret_arns=secret_arns,
         enforce_clean=False,
         **kwargs,
     )
@@ -229,6 +233,62 @@ def test_make_web_service_keeps_recent_images(sibling, pulumi_mocks):
                 "maximumNumberOfImages": 5,
                 "description": "keep the 5 most recent images",
             },
+        ]
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
+def test_make_web_service_passes_grace_period_and_storage(sibling, pulumi_mocks):
+    service = _web_service(
+        sibling, health_check_grace_period_seconds=600, ephemeral_storage_gib=30
+    )
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert service["healthCheckGracePeriodSeconds"] == 600
+        storage = service["taskDefinitionArgs"]["ephemeralStorage"]
+        assert storage == {"sizeInGib": 30}
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
+def test_make_web_service_leaves_grace_period_and_storage_to_aws(sibling, pulumi_mocks):
+    service = _web_service(sibling)
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert "healthCheckGracePeriodSeconds" not in service
+        assert "ephemeralStorage" not in service["taskDefinitionArgs"]
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
+def test_make_web_service_lets_the_role_read_each_secret(sibling, pulumi_mocks):
+    service = _web_service(sibling, secret_arns=["arn:0", "arn:1"])
+
+    def check(_: object) -> None:
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        (statement,) = json.loads(policy)["Statement"]
+        assert statement["Resource"] == ["arn:0", "arn:1"]
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
+def test_make_web_service_gives_no_secrets_policy_without_secrets(
+    sibling, pulumi_mocks
+):
+    service = _web_service(sibling)
+
+    def check(_: object) -> None:
+        # IAM refuses a statement with no resources.
+        assert not [
+            resource
+            for resource in pulumi_mocks.resources
+            if resource.typ == "aws:iam/rolePolicy:RolePolicy"
         ]
 
     return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]

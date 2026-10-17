@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ECS Fargate service, ALB, and DNS for ord-app.
+"""ECS Fargate service, ALB, and DNS for ord-app's editor.
 
 Per-environment knobs come from stack config; the defaults are the prod values, so
 the prod stack needs no config. The `staging` stack overrides them (see
