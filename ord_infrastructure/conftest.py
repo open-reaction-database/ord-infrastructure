@@ -84,13 +84,13 @@ class RecordingMocks(pulumi.runtime.Mocks):
 
 @pytest.fixture
 def pulumi_mocks(request) -> RecordingMocks:
-    """Mocks named for the project a test parametrizes this fixture with, or app.
+    """Mocks named for the project a test parametrizes this fixture with, or editor.
 
     A stack program reads its config from its project's namespace, so a test of the
     viewer's program passes ``@pytest.mark.parametrize("pulumi_mocks", ["viewer"],
     indirect=True)``.
     """
     mocks = RecordingMocks()
-    project = getattr(request, "param", "app")
+    project = getattr(request, "param", "editor")
     pulumi.runtime.set_mocks(mocks, project=project, stack="prod", preview=False)
     return mocks

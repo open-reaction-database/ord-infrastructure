@@ -53,12 +53,12 @@ def services(monkeypatch) -> list[tuple[pulumi.Resource, dict[str, object]]]:
 
 
 @pulumi.runtime.test
-def test_app_stack_passes_auth0_settings_to_build_and_task(
+def test_editor_stack_passes_auth0_settings_to_build_and_task(
     pulumi_mocks, services, monkeypatch
 ):
     # The clean-main gate would inspect the developer's ord-app checkout.
-    pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-    monkeypatch.chdir(STACKS / "app")
+    pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+    monkeypatch.chdir(STACKS / "editor")
     runpy.run_path("__main__.py")
 
     def check(_: object) -> None:
@@ -86,7 +86,7 @@ def test_app_stack_passes_auth0_settings_to_build_and_task(
 
 
 @pytest.mark.parametrize("missing", ["domain", "ord_app_client_id"])
-def test_app_stack_fails_without_an_auth_output(
+def test_editor_stack_fails_without_an_auth_output(
     missing, pulumi_mocks, services, monkeypatch
 ):
     outputs = dict(pulumi_mocks.STACK_OUTPUTS["ord/auth/prod"])
@@ -95,8 +95,8 @@ def test_app_stack_fails_without_an_auth_output(
 
     @pulumi.runtime.test
     def run() -> pulumi.Output:
-        pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-        monkeypatch.chdir(STACKS / "app")
+        pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+        monkeypatch.chdir(STACKS / "editor")
         runpy.run_path("__main__.py")
         ((service, _),) = services
         return service.urn
@@ -106,11 +106,11 @@ def test_app_stack_fails_without_an_auth_output(
 
 
 @pulumi.runtime.test
-def test_app_stack_gives_the_task_a_download_link_key(
+def test_editor_stack_gives_the_task_a_download_link_key(
     pulumi_mocks, services, monkeypatch
 ):
-    pulumi.runtime.set_all_config({"app:enforce_clean": "false"})
-    monkeypatch.chdir(STACKS / "app")
+    pulumi.runtime.set_all_config({"editor:enforce_clean": "false"})
+    monkeypatch.chdir(STACKS / "editor")
     runpy.run_path("__main__.py")
 
     def check(_: object) -> None:

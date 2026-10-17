@@ -196,7 +196,7 @@ def make_web_service(
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind the shared ALB.
 
-    Builds the full stack shared by the `app`, `interface`, and `viewer` projects: a
+    Builds the full stack shared by the `editor`, `interface`, and `viewer` projects: a
     target group and a host-header rule on the backend's shared HTTPS listener, a Route
     53 alias to that load balancer, an ECR image built from a sibling repo (gated by
     `assert_sibling_clean`), and a Fargate service wired to the backend VPC.

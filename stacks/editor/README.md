@@ -1,6 +1,6 @@
-# app
+# editor
 
-Pulumi project for ord-app: ECS Fargate service, a rule on the backend's shared
+Pulumi project for ord-app's editor: ECS Fargate service, a rule on the backend's shared
 load balancer, ECR image, and DNS. It has two stacks:
 
 | Stack | URL | Database | Image source |
@@ -45,10 +45,10 @@ enforces).
 
 ```sh
 # Bring up (or update) staging from the current ord-app working tree:
-pulumi -C stacks/app up      --stack ord/staging
+pulumi -C stacks/editor up      --stack ord/staging
 
 # Tear it down (listener rule + ECS + ECR all go; cost returns to ~$0):
-pulumi -C stacks/app destroy --stack ord/staging
+pulumi -C stacks/editor destroy --stack ord/staging
 ```
 
 Auth0 already lists `app-staging.open-reaction-database.org` as an allowed
