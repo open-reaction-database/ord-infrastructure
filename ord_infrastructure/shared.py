@@ -247,9 +247,9 @@ def make_web_service(
             auto-generates a "cluster-*" name. Changing it replaces the cluster.
         depends_on: Resources the service must be created after — e.g. a
             SecretVersion that must hold a value before a task resolves its secrets.
-        health_check_grace_period_seconds: How long after a task starts ECS ignores
-            the load balancer's health checks, for a task that takes minutes to begin
-            serving. None leaves ECS's default.
+        health_check_grace_period_seconds: Seconds after a task starts during which
+            ECS ignores the load balancer's failed health checks, for a task that takes
+            minutes to begin serving. None leaves ECS's default.
         ephemeral_storage_gib: The task's ephemeral storage in GiB, shared by the
             image's layers and whatever the task writes; Fargate allows 21 to 200.
             None leaves Fargate's default of 20 GiB.

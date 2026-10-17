@@ -172,7 +172,8 @@ def test_viewer_stack_fetches_a_pinned_corpus(pulumi_mocks, services, monkeypatc
         )
         assert memory_limit
         assert int(memory_limit[1]) < container["memory"]
-        # The corpus is fetched onto the task's storage, past Fargate's default.
+        # The corpus is fetched onto the task's storage, so it gets more than Fargate's
+        # default.
         storage = service["taskDefinitionArgs"]["ephemeralStorage"]["sizeInGib"]
         assert storage > 20
         # The API answers its health check only once the corpus is fetched and open.

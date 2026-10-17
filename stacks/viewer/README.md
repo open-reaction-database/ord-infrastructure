@@ -11,7 +11,7 @@ The viewer needs no database. Each task fetches its corpus from Hugging Face whe
 
 Both are commits, set in `__main__.py`, so every task serves the same corpus. To serve a new build, change both in one PR: the artifacts revision must hold a build that ord-app's pinned ord-schema and RDKit read, and the sources revision must mirror the ord-data commit that build's commit message names. A pair that does not match fails the task at startup.
 
-The revisions in place (ord-artifacts `6662a8b`, "Derive from ord-data 7048706", and the mirror of ord-data `7048706`) fetch 3.2 GiB of artifacts and 1.2 GiB of sources, 93 datasets and 2,428,291 reactions, as measured in ord-app#912 on 2026-10-16. ord-app reads that build from ord-schema 0.9.5 on, so its `main` must include ord-app#912 before this stack deploys.
+The revisions in place (ord-artifacts `6662a8b`, "Derive from ord-data 7048706", and the mirror of ord-data `7048706`) fetch 3.2 GiB of artifacts and 1.2 GiB of sources, 93 datasets and 2,428,291 reactions, as measured in ord-app#912 on 2026-10-16.
 
 ## Sizing
 

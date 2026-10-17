@@ -40,15 +40,15 @@ CORPUS_DIR = "/app/corpus"
 CPU = 2048
 MEMORY = 16384
 # Task memory, in MiB, kept from DuckDB for the rest of the process: Python, RDKit, and
-# nginx. DuckDB gets the remainder as its memory_limit, past which it spills to disk
-# rather than the task exceeding its memory and being stopped.
+# nginx. DuckDB gets the remainder as its memory_limit and spills to disk past it, so it
+# cannot take the memory the rest of the process needs.
 RESERVED_MEMORY = 6144
 
 # The image's layers, the fetched corpus, and whatever DuckDB spills share this storage.
 EPHEMERAL_STORAGE_GIB = 50
 
-# A task fetches and opens its corpus before its API answers the health check, which
-# takes minutes. ECS ignores failed checks for this long after a task starts, so a task
+# A task fetches and opens its corpus, which takes minutes, before its API answers the
+# health check. ECS ignores failed checks for this long after a task starts, so a task
 # still starting is not replaced; one that fails to open its corpus exits on its own.
 HEALTH_CHECK_GRACE_PERIOD_SECONDS = 30 * 60
 
@@ -63,8 +63,8 @@ secret_arns = []
 secrets = []
 depends_on = []
 if anthropic_api_key is not None:
-    # A prefix rather than a fixed name: a deleted secret holds its name through its
-    # recovery window, which would block one created again under that name.
+    # Named by prefix: a deleted secret holds its name through its recovery window, so
+    # a fixed name would block creating the secret again.
     anthropic_api_key_secret = aws.secretsmanager.Secret(
         "anthropic_api_key_secret", name_prefix="ord-viewer-anthropic-api-key-"
     )
