@@ -150,7 +150,7 @@ def _run_viewer_stack(monkeypatch, config: dict[str, str] | None = None) -> None
 
 @pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
 @pulumi.runtime.test
-def test_viewer_stack_fetches_a_pinned_corpus(pulumi_mocks, services, monkeypatch):
+def test_viewer_stack_serves_a_pinned_corpus(pulumi_mocks, services, monkeypatch):
     _run_viewer_stack(monkeypatch)
 
     def check(_: object) -> None:
