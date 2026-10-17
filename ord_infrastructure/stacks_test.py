@@ -15,6 +15,7 @@
 """Tests that run the stack programs under Pulumi mocks (see conftest.py)."""
 
 import pathlib
+import re
 import runpy
 
 import pulumi
@@ -131,6 +132,108 @@ def test_app_stack_gives_the_task_a_download_link_key(
 
     ((service, arguments),) = services
     # ECS reads the secret when the task starts, so its value must exist first.
+    assert any(
+        isinstance(resource, aws.secretsmanager.SecretVersion)
+        for resource in arguments["depends_on"]
+    )
+    return service.urn.apply(check)
+
+
+def _run_viewer_stack(monkeypatch, config: dict[str, str] | None = None) -> None:
+    """Run the viewer's stack program under the mocks, with `config` as its config."""
+    # The clean-main gate would inspect the developer's ord-app checkout.
+    monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
+    pulumi.runtime.set_all_config(config or {})
+    monkeypatch.chdir(STACKS / "viewer")
+    runpy.run_path("__main__.py")
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_fetches_a_pinned_corpus(pulumi_mocks, services, monkeypatch):
+    _run_viewer_stack(monkeypatch)
+
+    def check(_: object) -> None:
+        image = pulumi_mocks.inputs_of("awsx:ecr:Image")
+        assert image["dockerfile"] == "../../../ord-app/deploy/viewer/Dockerfile"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        container = service["taskDefinitionArgs"]["container"]
+        environment = {
+            variable["name"]: variable["value"] for variable in container["environment"]
+        }
+        assert environment["ORD_VIEWER_CORPUS_DIR"] == "/app/corpus"
+        # Commits, so every task fetches the same corpus; the viewer refuses one
+        # revision without the other.
+        for name in ("ORD_VIEWER_ARTIFACTS_REVISION", "ORD_VIEWER_SOURCES_REVISION"):
+            assert re.fullmatch("[0-9a-f]{40}", environment[name])
+        # DuckDB's cap leaves the rest of the process room within the task's memory.
+        memory_limit = re.fullmatch(
+            "([0-9]+)MiB", environment["ORD_VIEWER_MEMORY_LIMIT"]
+        )
+        assert memory_limit
+        assert int(memory_limit[1]) < container["memory"]
+        # The corpus is fetched onto the task's storage, past Fargate's default.
+        storage = service["taskDefinitionArgs"]["ephemeralStorage"]["sizeInGib"]
+        assert storage > 20
+        # The API answers its health check only once the corpus is fetched and open.
+        assert service["healthCheckGracePeriodSeconds"] > 0
+        target_group = pulumi_mocks.inputs_of("aws:lb/targetGroup:TargetGroup")
+        assert target_group["healthCheck"]["path"] == "/api/health"
+        # The alias registers after the service, so the rule names the host.
+        rule = pulumi_mocks.inputs_of("aws:lb/listenerRule:ListenerRule")
+        (condition,) = rule["conditions"]
+        assert condition["hostHeader"]["values"] == ["viewer.example.com"]
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_needs_no_anthropic_key(pulumi_mocks, services, monkeypatch):
+    _run_viewer_stack(monkeypatch)
+
+    def check(_: object) -> None:
+        assert not [
+            resource
+            for resource in pulumi_mocks.resources
+            if resource.typ.startswith("aws:secretsmanager/")
+        ]
+        # With no secret to read, the execution role gets no inline policy.
+        assert not [
+            resource
+            for resource in pulumi_mocks.resources
+            if resource.typ == "aws:iam/rolePolicy:RolePolicy"
+        ]
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert not service["taskDefinitionArgs"]["container"].get("secrets")
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_stack_gives_ask_the_configured_key(pulumi_mocks, services, monkeypatch):
+    _run_viewer_stack(monkeypatch, {"viewer:anthropic_api_key": "sk-test"})
+
+    def check(_: object) -> None:
+        secret_arn = "arn:aws:secretsmanager:secret/anthropic_api_key_secret"
+        version = pulumi_mocks.inputs_of(
+            "aws:secretsmanager/secretVersion:SecretVersion"
+        )
+        # A config secret stays a Pulumi secret, so it arrives wrapped.
+        assert version["secretString"]["value"] == "sk-test"
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        secrets = {
+            secret["name"]: secret["valueFrom"]
+            for secret in service["taskDefinitionArgs"]["container"]["secrets"]
+        }
+        assert secrets == {"ORD_ANTHROPIC_API_KEY": secret_arn}
+        policy = pulumi_mocks.inputs_of("aws:iam/rolePolicy:RolePolicy")["policy"]
+        assert secret_arn in policy
+
+    ((service, arguments),) = services
     assert any(
         isinstance(resource, aws.secretsmanager.SecretVersion)
         for resource in arguments["depends_on"]
