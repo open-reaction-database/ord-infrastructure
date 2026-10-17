@@ -16,3 +16,5 @@ config:
   aws:region: us-east-1
   viewer:anthropic_api_key:
     secure: AAABAOkNjAvHkPEAtmdYhNYVOpigWAm2X0lFiCcC+RjGdO17nKuuGiZqg6wHEKe3WrdyxK2ADjoXPU+wwx7YWmFmRIVxXFz84eIVQdb+xOro33xerCJJAv/bmXNl5vk2Qlbj4AKQgR+ur1yjyxTnTRBZJrtzPsTvDxEamTB8lCOeB/kWASJEGg24y7o=
+  viewer:hf_token:
+    secure: AAABAH4CFlP13N/qJpYCJz6ZrASTL2fYaMDQZ/drP+c0l0JBVwJaj7awg7c9PZgddnLWYDzGk0crZI0Bnfxs7EKObHOD
