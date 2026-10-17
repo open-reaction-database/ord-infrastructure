@@ -13,8 +13,7 @@ ord-infrastructure/
 │   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
 │   ├── auth/                # Auth0 resources: the ORD App client (see auth/README.md)
 │   ├── editor/              # ECS service, listener rule, task definitions for ord-app's editor
-│   ├── viewer/              # ECS service, listener rule, task definitions for ord-app's viewer
-│   └── interface/           # ECS service, listener rule, task definitions for ord-interface
+│   └── viewer/              # ECS service, listener rule, task definitions for ord-app's viewer
 ├── ord_infrastructure/      # Installable Python package of helpers shared across stacks
 │   └── shared.py            # assert_sibling_clean, make_web_service, make_ecs_execution_role
 └── pyproject.toml           # Build config for ord_infrastructure + tool config (ruff, ty)
@@ -69,7 +68,7 @@ Always run `preview` first and review the diff. Every project has a `prod` stack
 
 ### Building images from sibling repos
 
-`stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, and `stacks/interface` from `../ord-interface`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
+`stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
 
 To bypass the check for a local hotfix:
 
@@ -98,7 +97,6 @@ When bringing the stacks up from scratch:
 5. `auth` — the Auth0 client `editor` builds against
 6. `editor`
 7. `viewer`
-8. `interface`
 
 For routine changes, deploy only the project you modified.
 

@@ -1,6 +1,6 @@
 # viewer
 
-Pulumi project for the ORD viewer, ord-app's public search and browse site: ECS Fargate service, a rule on the backend's shared load balancer, ECR image, and DNS. It serves `viewer.open-reaction-database.org` from one stack, `ord/prod`, built from ord-app's `deploy/viewer/Dockerfile` on a clean `main`.
+Pulumi project for the ORD viewer, ord-app's public search and browse site: ECS Fargate service, a rule on the backend's shared load balancer, ECR image, and DNS. It serves the apex, `open-reaction-database.org`, from one stack, `ord/prod`, built from ord-app's `deploy/viewer/Dockerfile` on a clean `main`.
 
 ## Corpus
 
@@ -38,3 +38,5 @@ pulumi config set --secret anthropic_api_key --stack ord/prod
 pulumi preview --stack ord/prod
 pulumi up      --stack ord/prod
 ```
+
+`up` waits for the service to reach a steady state, which includes the new task's cold start, for up to the provider's 20-minute default for an ECS service. If a start outlasts that, `up` fails while ECS goes on starting the task; run `up` again once the service is healthy.

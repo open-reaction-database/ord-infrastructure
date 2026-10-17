@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: viewer
-description: ECS Fargate service, ALB, and DNS for the ORD viewer (served at viewer.open-reaction-database.org).
+description: ECS Fargate service, ALB, and DNS for the ORD viewer (served at the open-reaction-database.org apex).
 runtime:
   name: python
   options:

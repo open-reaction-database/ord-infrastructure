@@ -89,16 +89,13 @@ environment = {
     "ORD_VIEWER_MEMORY_LIMIT": f"{MEMORY - RESERVED_MEMORY}MiB",
 }
 
-domain_name = domain.get_output("domain_name")
-record_name = domain_name.apply(lambda name: f"viewer.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
-
 make_web_service(
     backend=backend,
     domain=domain,
     container_port=8080,
-    record_name=record_name,
+    record_name=domain.get_output("domain_name"),
     # This service's rule on the shared HTTPS listener; unique across services.
-    listener_rule_priority=400,
+    listener_rule_priority=100,
     # Served by the API through nginx's /api/ proxy once it has opened the corpus.
     health_check_path="/api/health",
     sibling_path="../../../ord-app",

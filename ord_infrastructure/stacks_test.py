@@ -180,10 +180,11 @@ def test_viewer_stack_serves_a_pinned_corpus(pulumi_mocks, services, monkeypatch
         assert service["healthCheckGracePeriodSeconds"] > 0
         target_group = pulumi_mocks.inputs_of("aws:lb/targetGroup:TargetGroup")
         assert target_group["healthCheck"]["path"] == "/api/health"
-        # The alias registers after the service, so the rule names the host.
+        # The viewer serves the apex. The alias registers after the service, so the
+        # rule names the host.
         rule = pulumi_mocks.inputs_of("aws:lb/listenerRule:ListenerRule")
         (condition,) = rule["conditions"]
-        assert condition["hostHeader"]["values"] == ["viewer.example.com"]
+        assert condition["hostHeader"]["values"] == ["example.com"]
 
     ((service, _),) = services
     return service.urn.apply(check)

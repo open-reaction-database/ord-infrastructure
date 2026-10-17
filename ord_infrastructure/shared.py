@@ -196,9 +196,9 @@ def make_web_service(
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind the shared ALB.
 
-    Builds the full stack shared by the `editor`, `interface`, and `viewer` projects: a
-    target group and a host-header rule on the backend's shared HTTPS listener, a Route
-    53 alias to that load balancer, an ECR image built from a sibling repo (gated by
+    Builds the full stack shared by the `editor` and `viewer` projects: a target group
+    and a host-header rule on the backend's shared HTTPS listener, a Route 53 alias to
+    that load balancer, an ECR image built from a sibling repo (gated by
     `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
 
     Resource names are fixed (e.g. "service", "listener_rule"), so call this at most
@@ -243,7 +243,7 @@ def make_web_service(
             Fargate CPU/memory combination.
         memory: Fargate task memory in MiB (default 2048 = 2 GB).
         cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
-            "interface") so clusters are distinguishable in the console. None
+            "viewer") so clusters are distinguishable in the console. None
             auto-generates a "cluster-*" name. Changing it replaces the cluster.
         depends_on: Resources the service must be created after — e.g. a
             SecretVersion that must hold a value before a task resolves its secrets.
