@@ -20,7 +20,7 @@ The revisions in place (ord-artifacts `6662a8b`, "Derive from ord-data 7048706",
 | CPU and memory | 2 vCPU, 16 GiB | In a container capped at 2 CPUs and 15 GiB, opening the full corpus peaked at 7.0 GiB, page cache included (2026-10-17, ord-app `7de6638`). 16 GiB is the most Fargate pairs with 2 vCPU. |
 | `ORD_VIEWER_MEMORY_LIMIT` | 10240 MiB | DuckDB's cap: the task's memory less 6 GiB for Python, RDKit, and nginx, so DuckDB spills to disk before the task runs out. |
 | Ephemeral storage | 50 GiB | The image's layers, the 4.4 GiB corpus, and DuckDB's spill share it; Fargate's default is 20 GiB. |
-| Health-check grace period | 30 minutes | That container passed its health check 9.4 minutes after starting, fetching without a token: 5.6 to fetch the artifacts, 1.0 to fetch the sources, and 2.6 to pair and open. |
+| Health-check grace period | 30 minutes | That container passed its health check 9.4 minutes after starting, fetching without a token: 5.6 to fetch the artifacts, 1.0 to fetch the sources, and 2.6 to pair and open. The first Fargate task, also without a token, passed it 5.3 minutes after it began running (2026-10-17). |
 
 A task starts serving only once it has fetched and opened its corpus, so a deploy keeps the old task until the new one passes its health check, `/api/health`. A task whose corpus fails to fetch or open exits, and ECS starts another.
 
