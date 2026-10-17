@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend: VPC, NAT gateway, ALB, RDS Aurora, Valkey, and an SSM bastion."""
+"""Shared backend: VPC, NAT gateway, ALB, RDS Aurora, and an SSM bastion."""
 
 import json
 
@@ -247,41 +247,6 @@ cluster_instance = aws.rds.ClusterInstance(
     opts=pulumi.ResourceOptions(protect=True),
 )
 
-valkey_security_group = aws.ec2.SecurityGroup(
-    "valkey_security_group",
-    ingress=[
-        aws.ec2.SecurityGroupIngressArgs(
-            from_port=6379,
-            to_port=6379,
-            protocol="tcp",
-            cidr_blocks=[vpc.vpc.cidr_block],
-        )
-    ],
-    vpc_id=vpc.vpc_id,
-)
-# ord-interface's cache for search-task state and natural-language translations.
-# Valkey Serverless bills for at least 100 MB of data, and the cache holds well
-# under a megabyte.
-valkey = aws.elasticache.ServerlessCache(
-    "valkey",
-    name="valkey",
-    engine="valkey",
-    major_engine_version="9",
-    cache_usage_limits={
-        "data_storage": {
-            "maximum": 10,
-            "unit": "GB",
-        },
-        "ecpu_per_seconds": [
-            {
-                "maximum": 5000,
-            }
-        ],
-    },
-    security_group_ids=[valkey_security_group.id],
-    subnet_ids=vpc.private_subnet_ids,
-)
-
 # Bastion for local DB access via SSM port forwarding (no public IP, no inbound ports).
 bastion_role = aws.iam.Role(
     "bastion_role",
@@ -502,8 +467,6 @@ pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 pulumi.export("rds_endpoint", cluster.endpoint)
 pulumi.export("rds_password_secret_arn", rds_password_secret.arn)
 pulumi.export("rds_ro_password_secret_arn", rds_ro_password_secret.arn)
-valkey_address = valkey.endpoints.apply(lambda endpoints: endpoints[0]["address"])  # ty: ignore[missing-argument, invalid-argument-type]
-pulumi.export("valkey_endpoint", valkey_address)
 pulumi.export("bastion_instance_id", bastion.id)
 pulumi.export("dev_vm_instance_id", dev_vm.id)
 pulumi.export("instance_connect_endpoint_id", instance_connect_endpoint.id)

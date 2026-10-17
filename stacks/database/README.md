@@ -14,15 +14,13 @@ dependency is quarantined here, in the one stack that actually needs it.
 
 ## What it manages
 
-- The application **databases**: `app`, `ord_20260702`, and `editor` (imported and
-  `protect`ed — they hold data, so they're adopted in place, never recreated).
+- The application **databases**: `app` and `editor` (imported and `protect`ed —
+  they hold data, so they're adopted in place, never recreated).
 - The **`readonly`** role (LOGIN), password sourced from the `rds_ro_password`
   secret that `backend` owns.
 - `CONNECT` + `USAGE` + `SELECT` on `public`, plus default privileges for future
-  tables, across every database. The search database `ord_20260702` also keeps
-  tables outside `public`, so the role gets the same USAGE + SELECT on `ord`
-  (ord-schema ORM), `rdkit` (cartridge), and `derived` (generated SMILES and RDKit
-  links).
+  tables, across every database, and the same on any other schema a database lists
+  in `EXTRA_READONLY_SCHEMAS`.
 
 ## Deploying
 
