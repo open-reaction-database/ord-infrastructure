@@ -24,12 +24,19 @@ The revisions in place (ord-artifacts `6662a8b`, "Derive from ord-data 7048706",
 
 A task starts serving only once it has fetched and opened its corpus, so a deploy keeps the old task until the new one passes its health check, `/api/health`. A task whose corpus fails to fetch or open exits, and ECS starts another.
 
-## /api/ask
+## Secrets
 
-`/api/ask` calls a model with the key in the stack's `anthropic_api_key` config secret, which the stack stores in Secrets Manager and injects as `ORD_ANTHROPIC_API_KEY`. Without it, the stack makes no secret and `/api/ask` answers 503, while every other route works. The task names the secret's version, so a new key reaches the service on the next `up`, which replaces the running tasks. To set it, from this directory:
+Two optional config secrets each go to Secrets Manager and reach the task as a variable:
+
+| Config key | Variable | Without it |
+| --- | --- | --- |
+| `anthropic_api_key` | `ORD_ANTHROPIC_API_KEY` | `/api/ask` answers 503; every other route works. |
+| `hf_token` | `HF_TOKEN` | The startup fetch's thousands of requests to Hugging Face go unauthenticated, under lower rate limits. A read-only token is enough. |
+
+The task names each secret's version, so a new value reaches the service on the next `up`, which replaces the running tasks. To set one, from this directory:
 
 ```sh
-pulumi config set --secret anthropic_api_key --stack ord/prod
+pulumi config set --secret <config key> --stack ord/prod
 ```
 
 ## Deploying
