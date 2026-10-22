@@ -232,9 +232,9 @@ cluster_instance = aws.rds.ClusterInstance(
     engine_version=cluster.engine_version,
     # Provisioned Graviton instance, sized by RAM so the working set stays resident in
     # shared_buffers. app's working set fits this class's cache with room to spare, and
-    # Aurora PostgreSQL offers no smaller class. Changing the class is an in-place compute swap (data lives in the shared cluster
-    # volume). Size up to db.t4g.large for cache, or db.r7g.large for dedicated CPU.
-    # See README "Database sizing".
+    # Aurora PostgreSQL offers no smaller class. Changing the class is an in-place
+    # compute swap (data lives in the shared cluster volume). Size up to db.t4g.large
+    # for cache, or db.r7g.large for dedicated CPU. See README "Database sizing".
     instance_class="db.t4g.medium",
     # Let AWS apply minor (16.x) patches automatically; the cluster pins only the
     # major version, so these don't fight the IaC config.
