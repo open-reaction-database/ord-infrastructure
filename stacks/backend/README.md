@@ -18,21 +18,21 @@ Aurora gives about 2 GB to `shared_buffers`. The class is chosen for RAM first: 
 is fast when the pages it reads are already in `shared_buffers`, and slow when it
 re-reads them from the cluster volume.
 
-The cluster serves two databases, measured on 2026-10-21 as the `readonly` role:
+The cluster holds two databases, measured on 2026-10-21 as the `readonly` role. Sizes
+are `pg_size_pretty`'s, in multiples of 1024 bytes.
 
 | database | size | used by |
 | --- | --- | --- |
 | `app` | 608 MB | ord-app's editor, both the `prod` and `staging` stacks |
-| `editor` | 282 MB | nothing that reads its tables: `pg_statio_user_tables` showed no reads since the instance restarted on 2026-10-09 |
+| `editor` | 282 MB | no stack; its tables had no reads from the instance's restart on 2026-10-09 to 2026-10-21 |
 
 The working set is `app`'s `reaction` table, 598 MB of the database:
 
-- **Heap and indexes, 222 MB.** The editor's queries read these: a 151 MB heap and
-  71 MB of btree indexes, the largest `uq_pb_reaction_id_dataset_id` (33 MB).
-- **TOAST, 377 MB.** The serialized reaction protos, read when a reaction is opened or
-  exported. They are touched far less often than the heap: about 76,000 block
-  accesses (cache hits plus storage reads) against about 925,000 for the heap and
-  indexes.
+- **Heap and indexes, 222 MB.** Most of the editor's reads land here: a 151 MB heap
+  and 71 MB of btree indexes, the largest `uq_pb_reaction_id_dataset_id` (33 MB).
+- **TOAST, 377 MB.** The table's out-of-line large values, touched far less often:
+  about 76,000 block accesses (cache hits plus storage reads) against about 925,000
+  for the heap and indexes.
 - The other seven tables (users, groups, datasets, templates) total under 1 MB.
 
 Both databases together (890 MB) take under half of `db.t4g.medium`'s cache. From
@@ -44,7 +44,7 @@ Sizing guidance:
 
 - Aurora sets `shared_buffers` to about 60 % of the instance's RAM. Pick a class whose
   `shared_buffers` holds the working set with headroom for `work_mem` and connections.
-- `db.t4g.medium` is the smallest class Aurora PostgreSQL offers. It has the same 2
+- Aurora PostgreSQL offers no class smaller than `db.t4g.medium`. It has the same 2
   vCPU as `db.t4g.large`, with a CPU baseline of 20 % per vCPU against the large's
   30 %. Aurora runs T classes in Unlimited mode, so a 24-hour average above the
   baseline is billed (`CPUSurplusCreditsCharged`) rather than throttled.
@@ -55,8 +55,8 @@ Sizing guidance:
 - A structure-search database needs more. ord-interface's `ord_20260702` kept about
   2.5 GB of RDKit GiST and btree indexes hot, and the cluster ran at `db.t4g.large` to
   hold them.
-- Serverless v2 would bill for an always-on cluster: the editor holds its connection
-  pool open, so the cluster never reaches zero connections to pause on.
+- Serverless v2 would bill for an always-on cluster: the editor keeps connections to
+  `app` open, so the cluster never reaches zero connections to pause on.
 - A class change is an in-place compute swap; the data lives in the shared cluster
   volume. The new instance starts with a cold cache and re-reads pages from storage as
   queries touch them. The buffer cache survives ordinary database restarts.
