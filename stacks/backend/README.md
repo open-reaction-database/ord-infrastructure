@@ -1,6 +1,6 @@
 # backend
 
-Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, and a bastion for local DB access.
+Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a bastion for local DB access, and a bucket for logs.
 
 ## Networking
 
@@ -178,3 +178,43 @@ Postgres `readonly` role itself (and its grants) is managed declaratively by the
 [`database` stack](../database/README.md), which reads `rds_ro_password` to set
 the role's password. Deploy `backend` first, then `database` (with the bastion
 tunnel open).
+
+## The logs bucket
+
+`open-reaction-database-logs` holds the natural-language question log and the
+CloudTrail record of access to it. It sets its own public-access block beside the
+account-wide one in the [`account` stack](../account/README.md).
+
+| prefix | holds | expires after |
+| --- | --- | --- |
+| `nl-log/raw/` | one JSON object per question, from `ord_schema.search.nl_log.S3Sink` (its default prefix) | 365 days |
+| `nl-log/redacted/` | months compacted by `nl_log.compact(redact=True)`, with the free-text fields emptied | 1825 days |
+| `cloudtrail/nl-log/` | the question log trail's log and digest files | 2190 days |
+
+Each rule also expires noncurrent versions a day after they become noncurrent: the
+bucket is unversioned, but on a versioned bucket expiring an object only adds a delete
+marker. A fourth rule aborts incomplete multipart uploads after 7 days, across the
+bucket.
+
+- **Prefixes.** No expiration prefix contains another, so no object matches two
+  expiration rules. Where rules overlap, S3 applies the shorter expiration, which
+  would expire the redacted months on the raw clock.
+- **Clocks.** S3 counts an object's age from its creation. A raw object's clock starts
+  when the question is asked; a redacted month's starts when it is compacted, and
+  restarts if the month is rewritten. Compaction must run before a month's first raw
+  objects expire.
+- **Access.** This stack grants no role access to the bucket. The account stack's
+  AdministratorAccess identities (the SSO permission set and
+  `OrganizationAccountAccessRole`) can read it through their own policies, and the
+  trail records those reads. ord-app's viewer serves
+  `ord_schema.search.nl` at `/api/ask` but records nothing unless
+  `ORD_VIEWER_ASK_LOG=stdout`, which the viewer stack does not set, and
+  `make_web_service` gives a task an execution role but no task role. A writer needs a
+  task role allowed `s3:PutObject` under `nl-log/raw/`.
+- **Trail.** `question-log-access` records every S3 object data event under `nl-log/`
+  except `PutObject`, which the writer makes once per question. It delivers under
+  `cloudtrail/nl-log/`, outside the log's prefix, so it does not record its own
+  deliveries, and the bucket policy admits deliveries from this trail only. A trail
+  for another service gets its own folder under `cloudtrail/`: CloudTrail's log file
+  names do not name the trail, so trails sharing a folder would mix their files under
+  one expiration rule.

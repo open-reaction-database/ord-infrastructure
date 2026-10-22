@@ -31,7 +31,7 @@ Two optional config secrets each go to Secrets Manager and reach the task as a v
 | Config key | Variable | Without it |
 | --- | --- | --- |
 | `anthropic_api_key` | `ORD_ANTHROPIC_API_KEY` | `/api/ask` answers 503; every other route works. |
-| `hf_token` | `HF_TOKEN` | The startup fetch's thousands of requests to Hugging Face go unauthenticated, under lower rate limits. A read-only token is enough. |
+| `hf_token` | `HF_TOKEN` | The startup fetch's thousands of requests to Hugging Face go unauthenticated, under lower rate limits. A read-only token is enough. It buys rate-limit headroom, not speed: on Fargate the artifacts took 1.4 minutes to fetch with a token and 1.3 to 1.7 without (2026-10-17). |
 
 The task names each secret's version, so a new value reaches the service on the next `up`, which replaces the running tasks. To set one, from this directory:
 
