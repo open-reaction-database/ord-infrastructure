@@ -145,7 +145,9 @@ def test_editor_stack_gives_the_task_a_download_link_key(
 
 @pytest.mark.parametrize("pulumi_mocks", ["editor", "viewer"], indirect=True)
 @pulumi.runtime.test
-def test_service_stacks_expire_container_logs(pulumi_mocks, services, monkeypatch):
+def test_service_stacks_keep_container_logs_for_90_days(
+    pulumi_mocks, services, monkeypatch
+):
     # The clean-main gate would inspect the developer's ord-app checkout.
     monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
     pulumi.runtime.set_all_config({})
@@ -155,8 +157,9 @@ def test_service_stacks_expire_container_logs(pulumi_mocks, services, monkeypatc
     def check(_: object) -> None:
         service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
         log_group = service["taskDefinitionArgs"]["logGroup"]["args"]
-        # A retention of 0 keeps every event.
-        assert log_group["retentionInDays"] > 0
+        # Pinned rather than bounded: a shorter period deletes the events already older
+        # than it, and 0 keeps every event.
+        assert log_group["retentionInDays"] == 90
 
     ((service, _),) = services
     return service.urn.apply(check)
