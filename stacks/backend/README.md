@@ -116,54 +116,6 @@ aws ec2 stop-instances --instance-ids "$BASTION"
 aws ec2 start-instances --instance-ids "$BASTION"
 ```
 
-## Dev VM (loading datasets into the ORM)
-
-A `t3.xlarge` Ubuntu 24.04 instance (`dev-vm`) for loading datasets into the
-database. It has a 50 GB gp3 root volume (grow it later if needed — no replace),
-no public IP, and an instance role that can read the RDS credential secrets. SSH reaches it through an EC2 Instance
-Connect Endpoint (IAM-gated — no SSH keys or open ports).
-
-**It is meant to stay stopped.** AWS can't launch an instance pre-stopped, so it
-comes up running on the first `pulumi up`; stop it once and Pulumi leaves it
-alone (the provider doesn't manage power state). Turn it on only when you need
-it.
-
-```sh
-DEV_VM=$(pulumi -C stacks/backend stack output dev_vm_instance_id)
-
-aws ec2 start-instances --instance-ids "$DEV_VM"   # before a session
-aws ec2 stop-instances  --instance-ids "$DEV_VM"   # when done
-
-# Connect (requires the EC2 Instance Connect CLI / SSM plugin):
-aws ec2-instance-connect ssh --instance-id "$DEV_VM"
-```
-
-The VM is inside the VPC, so it connects to the cluster directly, with no tunnel:
-
-- Host: the `rds_endpoint` stack output
-- Port: `5432`
-- User and password: `readonly` with `rds_ro_password`, or `ord` with
-  `rds_password` for authorized writes (see below)
-
-Look up the endpoint and the secret ARN locally; the VM's instance role can read
-both secrets. The VM boots from a stock Ubuntu image, so install the AWS CLI and
-`psql` on it once:
-
-```sh
-# On the VM, once:
-sudo snap install aws-cli --classic
-sudo apt-get update && sudo apt-get install -y postgresql-client
-
-# Locally:
-pulumi -C stacks/backend stack output rds_endpoint
-pulumi -C stacks/backend stack output rds_ro_password_secret_arn
-
-# On the VM, with the values from above:
-PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "<secret ARN>" \
-  --query SecretString --output text) \
-  psql "host=<rds_endpoint> port=5432 user=readonly dbname=app sslmode=require"
-```
-
 ## Read-only vs read-write credentials
 
 There are two passwords in Secrets Manager, one per Postgres role:
@@ -172,7 +124,7 @@ There are two passwords in Secrets Manager, one per Postgres role:
   inspection, by humans and automation alike. The role has `SELECT` on every
   database the `database` stack manages.
 - **`rds_password`** — the master `ord` user (full read-write). Reserved for
-  authorized writes (e.g. dataset loads). Don't use it for routine reads.
+  authorized writes. Don't use it for routine reads.
 
 This stack owns the `readonly` password and its secret, but the
 Postgres `readonly` role itself (and its grants) is managed declaratively by the
