@@ -75,9 +75,6 @@ class RecordingMocks(pulumi.runtime.Mocks):
             },
             "random:index/randomPassword:RandomPassword": {"result": "generated"},
             "random:index/randomId:RandomId": {"hex": "0123abcd"},
-            "aws:elasticache/serverlessCache:ServerlessCache": {
-                "endpoints": [{"address": "cache.example.com", "port": 6379}]
-            },
             "aws:s3/bucket:Bucket": {
                 "arn": f"arn:aws:s3:::{args.inputs.get('bucket', args.name)}"
             },

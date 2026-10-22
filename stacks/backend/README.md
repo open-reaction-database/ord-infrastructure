@@ -1,6 +1,6 @@
 # backend
 
-Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a Valkey cache, a bastion for local DB access, and a bucket for logs.
+Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a bastion for local DB access, and a bucket for logs.
 
 ## Networking
 
@@ -12,6 +12,10 @@ Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a Valk
   service stack adds a target group and a host-header rule (`https_listener_arn`).
 
 ## Database sizing
+
+The instance class was sized for `ord_20260702`, the search database ord-interface
+queried, and the working set and timings below are that database's. `app` and
+`editor` have not been measured against the class.
 
 The cluster runs a **provisioned** instance (not Serverless v2), and the instance
 class is chosen for **RAM, not CPU**: structure search is fast only when its working

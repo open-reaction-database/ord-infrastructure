@@ -30,10 +30,8 @@ TUNNEL_HOST = "localhost"
 TUNNEL_PORT = 15432
 
 # Every application database in the cluster; each holds real data and is protected.
-# The read-only role is granted across all of them. `ord_20260702` is the search
-# database built by the ord-schema 0.8 ORM pipeline, named for the date its load
-# completed.
-DATABASES = ["app", "ord_20260702", "editor"]
+# The read-only role is granted across all of them.
+DATABASES = ["app", "editor"]
 
 # Databases that already exist on the cluster and must be adopted in place rather than
 # created — a create would fail against the live database, and a replace would drop it.
@@ -41,13 +39,10 @@ DATABASES = ["app", "ord_20260702", "editor"]
 IMPORT_DATABASES = set()
 
 # Every database exposes readable tables in public; the readonly role is granted
-# there for all of them. The search database also keeps tables in non-public
-# schemas, so the role needs USAGE + SELECT on those too: `ord` (ord-schema's ORM
-# tables), `rdkit` (the cartridge), and `derived` (generated SMILES and RDKit links).
-# The Alembic-managed app database and the editor database use public only.
-EXTRA_READONLY_SCHEMAS = {
-    "ord_20260702": ["ord", "rdkit", "derived"],
-}
+# there for all of them. A database that keeps tables in other schemas lists them
+# here, and the role gets the same USAGE + SELECT on each. The Alembic-managed app
+# database and the editor database use public only.
+EXTRA_READONLY_SCHEMAS: dict[str, list[str]] = {}
 
 # Credentials come from the secrets the backend stack manages: the master user to
 # connect as, and the generated password the `readonly` role should have.
