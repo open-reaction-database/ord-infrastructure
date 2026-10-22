@@ -311,11 +311,13 @@ def test_backend_stack_question_log_expiry_and_trail_agree(pulumi_mocks, monkeyp
         rules = pulumi_mocks.inputs_of(
             "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration"
         )["rules"]
+        expiring = [rule for rule in rules if "expiration" in rule]
         expiry = {
-            rule["filter"]["prefix"]: rule["expiration"]["days"]
-            for rule in rules
-            if "expiration" in rule
+            rule["filter"]["prefix"]: rule["expiration"]["days"] for rule in expiring
         }
+        # On a versioned bucket, expiring an object leaves its data in the version
+        # beneath, so each rule expires noncurrent versions too.
+        assert all(rule["noncurrentVersionExpiration"] for rule in expiring)
         # Where expiration rules overlap, S3 applies the shorter one.
         for prefix, other in itertools.permutations(expiry, 2):
             assert not other.startswith(prefix)

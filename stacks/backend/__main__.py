@@ -534,39 +534,51 @@ QUESTION_LOG_REDACTED_RETENTION_DAYS = 1825
 # Longer than either tier, so the record of an access outlasts what was accessed.
 QUESTION_LOG_AUDIT_RETENTION_DAYS = 2190
 
+
+def _expiration_rule(
+    rule_id: str, prefix: str, days: int
+) -> aws.s3.BucketLifecycleConfigurationRuleArgs:
+    """Returns a lifecycle rule expiring the objects under a prefix.
+
+    Args:
+        rule_id: The rule's ID within the bucket's lifecycle configuration.
+        prefix: Key prefix the rule applies to.
+        days: Days after an object's creation before it expires.
+
+    Returns:
+        The rule. It also expires noncurrent versions a day after they become
+        noncurrent: on a versioned bucket, expiring an object only adds a delete
+        marker, and its data stays in the version beneath.
+    """
+    return aws.s3.BucketLifecycleConfigurationRuleArgs(
+        id=rule_id,
+        status="Enabled",
+        filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(prefix=prefix),
+        expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(days=days),
+        noncurrent_version_expiration=aws.s3.BucketLifecycleConfigurationRuleNoncurrentVersionExpirationArgs(
+            noncurrent_days=1
+        ),
+    )
+
+
 aws.s3.BucketLifecycleConfiguration(
     "ord_logs_bucket_lifecycle",
     bucket=logs_bucket.id,
     rules=[
-        aws.s3.BucketLifecycleConfigurationRuleArgs(
-            id="expire-question-log-raw",
-            status="Enabled",
-            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
-                prefix=QUESTION_LOG_RAW_PREFIX
-            ),
-            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
-                days=QUESTION_LOG_RAW_RETENTION_DAYS
-            ),
+        _expiration_rule(
+            "expire-question-log-raw",
+            QUESTION_LOG_RAW_PREFIX,
+            QUESTION_LOG_RAW_RETENTION_DAYS,
         ),
-        aws.s3.BucketLifecycleConfigurationRuleArgs(
-            id="expire-question-log-redacted",
-            status="Enabled",
-            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
-                prefix=QUESTION_LOG_REDACTED_PREFIX
-            ),
-            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
-                days=QUESTION_LOG_REDACTED_RETENTION_DAYS
-            ),
+        _expiration_rule(
+            "expire-question-log-redacted",
+            QUESTION_LOG_REDACTED_PREFIX,
+            QUESTION_LOG_REDACTED_RETENTION_DAYS,
         ),
-        aws.s3.BucketLifecycleConfigurationRuleArgs(
-            id="expire-question-log-audit",
-            status="Enabled",
-            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
-                prefix=QUESTION_LOG_AUDIT_PREFIX
-            ),
-            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
-                days=QUESTION_LOG_AUDIT_RETENTION_DAYS
-            ),
+        _expiration_rule(
+            "expire-question-log-audit",
+            QUESTION_LOG_AUDIT_PREFIX,
+            QUESTION_LOG_AUDIT_RETENTION_DAYS,
         ),
         # The parts of a failed multipart upload are billed until aborted. The empty
         # prefix applies this rule to the whole bucket.
@@ -581,9 +593,11 @@ aws.s3.BucketLifecycleConfiguration(
     ],
 )
 
-# No role is granted access to the bucket. make_web_service gives a task an execution
-# role but no task role, so a container has no identity to write as; a writer needs a
-# task role allowed s3:PutObject under QUESTION_LOG_RAW_PREFIX.
+# This stack grants no role access to the bucket; the account stack's
+# AdministratorAccess identities can read it through their own policies, and the trail
+# records those reads. make_web_service gives a task an execution role but no task
+# role, so a container has no identity to write as; a writer needs a task role allowed
+# s3:PutObject under QUESTION_LOG_RAW_PREFIX.
 
 # Named explicitly, so the bucket policy can name the trail before it exists.
 QUESTION_LOG_TRAIL_NAME = "question-log-access"

@@ -191,7 +191,10 @@ account-wide one in the [`account` stack](../account/README.md).
 | `nl-log/redacted/` | months compacted by `nl_log.compact(redact=True)`, with the free-text fields emptied | 1825 days |
 | `cloudtrail/nl-log/` | the question log trail's log and digest files | 2190 days |
 
-A fourth rule aborts incomplete multipart uploads after 7 days, across the bucket.
+Each rule also expires noncurrent versions a day after they become noncurrent: the
+bucket is unversioned, but on a versioned bucket expiring an object only adds a delete
+marker. A fourth rule aborts incomplete multipart uploads after 7 days, across the
+bucket.
 
 - **Prefixes.** No expiration prefix contains another, so no object matches two
   expiration rules. Where rules overlap, S3 applies the shorter expiration, which
@@ -200,7 +203,10 @@ A fourth rule aborts incomplete multipart uploads after 7 days, across the bucke
   when the question is asked; a redacted month's starts when it is compacted, and
   restarts if the month is rewritten. Compaction must run before a month's first raw
   objects expire.
-- **Access.** No role is granted access to the bucket. ord-app's viewer serves
+- **Access.** This stack grants no role access to the bucket. The account stack's
+  AdministratorAccess identities (the SSO permission set and
+  `OrganizationAccountAccessRole`) can read it through their own policies, and the
+  trail records those reads. ord-app's viewer serves
   `ord_schema.search.nl` at `/api/ask` but records nothing unless
   `ORD_VIEWER_ASK_LOG=stdout`, which the viewer stack does not set, and
   `make_web_service` gives a task an execution role but no task role. A writer needs a
