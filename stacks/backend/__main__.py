@@ -132,8 +132,7 @@ final_snapshot_suffix = random.RandomId("final_snapshot_suffix", byte_length=4)
 
 # Custom cluster parameters. random_page_cost defaults to 4 (spinning-disk era);
 # Aurora storage is SSD-backed, so 1.1 stops the planner over-penalizing index
-# scans relative to sequential scans -- important for the RDKit GiST substructure
-# and fingerprint indexes. Dynamic parameter, applied without a reboot.
+# scans relative to sequential scans. Dynamic parameter, applied without a reboot.
 # Single source of truth for the PostgreSQL major version: the cluster pins this
 # as its engine_version (major only, so AWS minor auto-upgrades still apply without
 # drift) and the parameter group derives its family from it, so the two can't fall
@@ -231,12 +230,11 @@ cluster_instance = aws.rds.ClusterInstance(
     cluster_identifier=cluster.id,
     engine=aws.rds.EngineType.AURORA_POSTGRESQL,
     engine_version=cluster.engine_version,
-    # Provisioned Graviton instance (8 GB -> ~4.8 GB shared_buffers) so the search
-    # working set stays resident -- RAM is the binding constraint. That set is ~2.5 GB
-    # of indexes (the RDKit GiST predicate indexes plus the btrees the joins walk),
-    # more than db.t4g.medium's ~2 GB cache holds under mixed load. Changing the class
-    # is an in-place compute swap (data lives in the shared cluster volume). Size up to
-    # db.r7g.large (dedicated CPU) if load grows. See README "Database sizing".
+    # Provisioned Graviton instance, sized by RAM so a working set stays resident in
+    # shared_buffers. The class was chosen for the ord_20260702 search database's
+    # indexes; app and editor have not been measured against it. Changing the class
+    # is an in-place compute swap (data lives in the shared cluster volume). See
+    # README "Database sizing".
     instance_class="db.t4g.large",
     # Let AWS apply minor (16.x) patches automatically; the cluster pins only the
     # major version, so these don't fight the IaC config.

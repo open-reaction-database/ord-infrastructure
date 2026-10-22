@@ -13,6 +13,10 @@ Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a bast
 
 ## Database sizing
 
+The instance class was sized for `ord_20260702`, the search database ord-interface
+queried, and the working set and timings below are that database's. `app` and
+`editor` have not been measured against the class.
+
 The cluster runs a **provisioned** instance (not Serverless v2), and the instance
 class is chosen for **RAM, not CPU**: structure search is fast only when its working
 set stays resident in the buffer cache, otherwise queries re-read it from storage.
