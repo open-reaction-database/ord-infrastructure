@@ -13,59 +13,55 @@ Pulumi stack for the backend AWS infrastructure: VPC, RDS Aurora cluster, a bast
 
 ## Database sizing
 
-The instance class was sized for `ord_20260702`, the search database ord-interface
-queried, and the working set and timings below are that database's. `app` and
-`editor` have not been measured against the class.
+The cluster runs one **provisioned** `db.t4g.medium` instance: 4 GB of RAM, of which
+Aurora gives about 2 GB to `shared_buffers`. The class is chosen for RAM first: a query
+is fast when the pages it reads are already in `shared_buffers`, and slow when it
+re-reads them from the cluster volume.
 
-The cluster runs a **provisioned** instance (not Serverless v2), and the instance
-class is chosen for **RAM, not CPU**: structure search is fast only when its working
-set stays resident in the buffer cache, otherwise queries re-read it from storage.
-That working set is bigger than just the RDKit predicate indexes:
+The cluster serves two databases, measured on 2026-10-21 as the `readonly` role:
 
-- The **RDKit GiST indexes** — `rdkit.mol_index` (~510 MB) and `rdkit.morgan_bfp_index`
-  (~166 MB) — which the substructure/similarity predicates scan.
-- The **btree indexes the joins walk** — `compound_pkey` (~744 MB),
-  `ix_ord_compound_reaction_input_id` (~580 MB), `ix_ord_compound_rdkit_mol_id`
-  (~242 MB), `reaction_input_pkey` (~232 MB), … — so **~2.5 GB of indexes participate
-  in a single component search.** The GiST indexes get scanned (mostly hot); the
-  btrees are point-looked-up, so only a fraction is hot per *selective* query — but
-  under mixed/concurrent load the hot set climbs toward that full 2.5 GB.
-- The **stats queries** (`most_used_smiles`) additionally scan a large slice of the
-  ~1.6 GB `compound` heap and its indexes.
+| database | size | used by |
+| --- | --- | --- |
+| `app` | 608 MB | ord-app's editor, both the `prod` and `staging` stacks |
+| `editor` | 282 MB | nothing that reads its tables: `pg_statio_user_tables` showed no reads since the instance restarted on 2026-10-09 |
 
-(The DB has ~15 GB of indexes total, but most — `compound_identifier`, `amount`,
-person/date records, and the 7 GB `reaction` heap of proto blobs — are cold for
-search; only the above is hot.)
+The working set is `app`'s `reaction` table, 598 MB of the database:
 
-This bit us: the cluster was once Serverless v2 capped at `max_capacity=1` ACU
-(~2 GB RAM → 256 MB `shared_buffers`). The index set was 2× the cache, so
-substructure queries ran **12–21 s, ~98% of it storage I/O** (confirmed with
-`EXPLAIN (ANALYZE, BUFFERS)`). The cluster also never idled (0 % over 90 days), so
-serverless scale-to-zero bought nothing. Switching to a provisioned instance made
-`shared_buffers` large enough to hold the indexes; the same query dropped to
-**~160 ms warm**.
+- **Heap and indexes, 222 MB.** The editor's queries read these: a 151 MB heap and
+  71 MB of btree indexes, the largest `uq_pb_reaction_id_dataset_id` (33 MB).
+- **TOAST, 377 MB.** The serialized reaction protos, read when a reaction is opened or
+  exported. They are touched far less often than the heap: about 76,000 block
+  accesses (cache hits plus storage reads) against about 925,000 for the heap and
+  indexes.
+- The other seven tables (users, groups, datasets, templates) total under 1 MB.
+
+Both databases together (890 MB) take under half of `db.t4g.medium`'s cache. From
+2026-10-18, the day after ord-interface was torn down, to 2026-10-21, the instance
+(then a `db.t4g.large`) ran at 7 % CPU on average and 10 % at peak, with 4–8
+connections, read IOPS near zero, and a daily buffer cache hit ratio above 99.99 %.
 
 Sizing guidance:
 
-- Aurora sets `shared_buffers` to ~60 % of instance RAM. Pick a class whose
-  `shared_buffers` comfortably exceeds the working set above **plus** headroom for
-  hot heap pages, `work_mem`, and connections.
-- Current: **`db.t4g.large`** (8 GB → ~4.8 GB `shared_buffers`). This holds the
-  ~2.5 GB index working set with room as the data grows. `db.t4g.medium` (4 GB →
-  ~2 GB) was tried but is too tight — it fits the GiST predicate index and serves
-  selective searches (~160 ms warm), but the full working set exceeds its cache, so
-  mixed/concurrent load (especially stats queries) would thrash. Size up to
-  `db.r7g.large` for dedicated (non-burstable) CPU if recheck-heavy load grows.
-  `t4g.*` all have 2 vCPU, so stepping between them trades only RAM, and a class
-  change is an in-place compute swap (data lives in the shared cluster volume).
+- Aurora sets `shared_buffers` to about 60 % of the instance's RAM. Pick a class whose
+  `shared_buffers` holds the working set with headroom for `work_mem` and connections.
+- `db.t4g.medium` is the smallest class Aurora PostgreSQL offers. It has the same 2
+  vCPU as `db.t4g.large`, with a CPU baseline of 20 % per vCPU against the large's
+  30 %. Aurora runs T classes in Unlimited mode, so a 24-hour average above the
+  baseline is billed (`CPUSurplusCreditsCharged`) rather than throttled.
+- Size up to `db.t4g.large` (about 4.7 GB of `shared_buffers`) when the daily buffer
+  cache hit ratio drops below 99 % or read IOPS climb under steady load, or when CPU
+  averages above the medium's baseline. Size up to `db.r7g.large` for dedicated
+  (non-burstable) CPU.
+- A structure-search database needs more. ord-interface's `ord_20260702` kept about
+  2.5 GB of RDKit GiST and btree indexes hot, and the cluster ran at `db.t4g.large` to
+  hold them.
+- Serverless v2 would bill for an always-on cluster: the editor holds its connection
+  pool open, so the cluster never reaches zero connections to pause on.
+- A class change is an in-place compute swap; the data lives in the shared cluster
+  volume. The new instance starts with a cold cache and re-reads pages from storage as
+  queries touch them. The buffer cache survives ordinary database restarts.
 - Reserved instances apply only to provisioned classes (not Serverless v2 ACUs) and
   cut ~25 % off at 1 year; buy one once the class is settled.
-
-Cold starts: `survivable_cache_mode` is on, so the buffer cache survives normal DB
-restarts (including most minor-version upgrades). The cache is only lost on
-**instance replacement** (class change, major upgrade, hardware failure), after
-which the first substructure query is slow (~40 s) until the index re-warms, then
-back to ~160 ms. These events are rare, so we don't run `pg_prewarm`/autoprewarm.
 
 ## Connecting to RDS from a local client (DataGrip, psql, etc.)
 
