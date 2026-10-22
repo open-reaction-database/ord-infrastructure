@@ -14,13 +14,16 @@
 
 """Tests that run the stack programs under Pulumi mocks (see conftest.py)."""
 
+import itertools
 import json
 import pathlib
 import re
 import runpy
+import types
 
 import pulumi
 import pulumi_aws as aws
+import pulumi_awsx as awsx
 import pytest
 
 from ord_infrastructure import shared
@@ -291,3 +294,82 @@ def test_viewer_stack_injects_every_configured_secret(
 
     ((service, _),) = services
     return service.urn.apply(check)
+
+
+class _Vpc:
+    """Stands in for awsx.ec2.Vpc, whose outputs the mocks cannot construct.
+
+    Its ``vpc`` output is a reference to a child resource the mocks never create.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.vpc_id = pulumi.Output.from_input("vpc-0")
+        self.vpc = types.SimpleNamespace(
+            cidr_block=pulumi.Output.from_input("10.0.0.0/16")
+        )
+        # One subnet of each kind per availability zone the backend spans.
+        self.private_subnet_ids = pulumi.Output.from_input(
+            ["subnet-0", "subnet-1", "subnet-2"]
+        )
+        self.public_subnet_ids = pulumi.Output.from_input(
+            ["subnet-3", "subnet-4", "subnet-5"]
+        )
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["backend"], indirect=True)
+@pulumi.runtime.test
+def test_backend_stack_question_log_expiry_and_trail_agree(pulumi_mocks, monkeypatch):
+    monkeypatch.setattr(awsx.ec2, "Vpc", _Vpc)
+    monkeypatch.chdir(STACKS / "backend")
+    program = runpy.run_path("__main__.py")
+    account = pulumi_mocks.CALL_RESULTS["aws:index/getCallerIdentity:getCallerIdentity"]
+    region = pulumi_mocks.CALL_RESULTS["aws:index/getRegion:getRegion"]
+    bucket_arn = "arn:aws:s3:::open-reaction-database-logs"
+
+    def check(_: object) -> None:
+        rules = pulumi_mocks.inputs_of(
+            "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration"
+        )["rules"]
+        expiring = [rule for rule in rules if "expiration" in rule]
+        expiry = {
+            rule["filter"]["prefix"]: rule["expiration"]["days"] for rule in expiring
+        }
+        # On a versioned bucket, expiring an object leaves its data in the version
+        # beneath, so each rule expires noncurrent versions too.
+        assert all(rule["noncurrentVersionExpiration"] for rule in expiring)
+        # Where expiration rules overlap, S3 applies the shorter one.
+        for prefix, other in itertools.permutations(expiry, 2):
+            assert not other.startswith(prefix)
+        # The raw prefix is the one ord_schema.search.nl_log.S3Sink writes by default.
+        raw, redacted = expiry["nl-log/raw/"], expiry["nl-log/redacted/"]
+        trail = pulumi_mocks.inputs_of("aws:cloudtrail/trail:Trail")
+        audit = expiry[f"{trail['s3KeyPrefix']}/"]
+        assert raw < redacted < audit
+
+        (selector,) = trail["advancedEventSelectors"]
+        fields = {field["field"]: field for field in selector["fieldSelectors"]}
+        (watched,) = fields["resources.ARN"]["startsWiths"]
+        assert all(
+            f"{bucket_arn}/{prefix}".startswith(watched)
+            for prefix in ("nl-log/raw/", "nl-log/redacted/")
+        )
+        # The trail's own deliveries fall outside what it watches.
+        assert not f"{bucket_arn}/{trail['s3KeyPrefix']}/".startswith(watched)
+        assert fields["eventName"]["notEquals"] == ["PutObject"]
+
+        # CloudTrail may deliver only where this trail writes, and only for this trail.
+        trail_arn = (
+            f"arn:aws:cloudtrail:{region['region']}:{account['accountId']}"
+            f":trail/{trail['name']}"
+        )
+        policy = json.loads(
+            pulumi_mocks.inputs_of("aws:s3/bucketPolicy:BucketPolicy")["policy"]
+        )
+        for statement in policy["Statement"]:
+            assert statement["Condition"]["StringEquals"]["aws:SourceArn"] == trail_arn
+        (put,) = [s for s in policy["Statement"] if s["Action"] == "s3:PutObject"]
+        assert put["Resource"] == (
+            f"{bucket_arn}/{trail['s3KeyPrefix']}/AWSLogs/{account['accountId']}/*"
+        )
+
+    return program["question_log_trail"].urn.apply(check)

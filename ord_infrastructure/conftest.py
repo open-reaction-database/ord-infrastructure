@@ -49,6 +49,12 @@ class RecordingMocks(pulumi.runtime.Mocks):
         },
     }
 
+    # What the data sources a stack program reads return, per invoke token.
+    CALL_RESULTS: ClassVar[dict[str, dict[str, object]]] = {
+        "aws:index/getCallerIdentity:getCallerIdentity": {"accountId": "123456789012"},
+        "aws:index/getRegion:getRegion": {"region": "us-east-1"},
+    }
+
     def __init__(self) -> None:
         self.resources: list[pulumi.runtime.MockResourceArgs] = []
 
@@ -68,6 +74,13 @@ class RecordingMocks(pulumi.runtime.Mocks):
                 "versionId": f"{args.name}-version-id"
             },
             "random:index/randomPassword:RandomPassword": {"result": "generated"},
+            "random:index/randomId:RandomId": {"hex": "0123abcd"},
+            "aws:elasticache/serverlessCache:ServerlessCache": {
+                "endpoints": [{"address": "cache.example.com", "port": 6379}]
+            },
+            "aws:s3/bucket:Bucket": {
+                "arn": f"arn:aws:s3:::{args.inputs.get('bucket', args.name)}"
+            },
         }
         outputs = dict(args.inputs) | computed.get(args.typ, {})
         # An output the SDK reads as a reference to another resource, which an echoed
@@ -76,8 +89,9 @@ class RecordingMocks(pulumi.runtime.Mocks):
             outputs.pop(name, None)
         return f"{args.name}_id", outputs
 
-    def call(self, args: pulumi.runtime.MockCallArgs) -> tuple[dict, list | None]:
-        return {}, None
+    def call(self, args: pulumi.runtime.MockCallArgs) -> tuple[dict, list]:
+        # The mocks iterate the failures, so "none" is an empty list.
+        return self.CALL_RESULTS.get(args.token, {}), []
 
     def inputs_of(self, typ: str) -> dict:
         """Return the inputs of the one resource of type `typ`."""
