@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared backend: VPC, NAT gateway, ALB, RDS Aurora, Valkey, and an SSM bastion."""
+"""Shared backend: VPC, NAT gateway, ALB, RDS Aurora, Valkey, SSM bastion, and S3."""
 
 import json
 
@@ -491,6 +491,206 @@ aws.s3.Bucket(
     bucket="open-reaction-database",
     opts=pulumi.ResourceOptions(protect=True),
 )
+
+# Holds the natural-language question log that ord_schema.search.nl_log writes, and the
+# trail's record of access to it.
+logs_bucket = aws.s3.Bucket(
+    "ord_logs_bucket",
+    bucket="open-reaction-database-logs",
+    opts=pulumi.ResourceOptions(protect=True),
+)
+
+# The `account` stack blocks public access account-wide; the bucket sets the same four
+# flags itself, so the block holds if the account-level setting changes.
+aws.s3.BucketPublicAccessBlock(
+    "ord_logs_bucket_public_access",
+    bucket=logs_bucket.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+
+# Everything the question log holds, which the trail below watches.
+QUESTION_LOG_PREFIX = "nl-log/"
+# One object per question, under ord_schema.search.nl_log.S3Sink's default prefix, and
+# the months nl_log.compact(redact=True) folds them into with the free-text fields
+# emptied. Neither prefix contains the other, so no object matches two expiration rules:
+# where rules overlap, S3 applies the shorter expiration, which would expire the
+# redacted months on the raw clock.
+QUESTION_LOG_RAW_PREFIX = "nl-log/raw/"
+QUESTION_LOG_REDACTED_PREFIX = "nl-log/redacted/"
+# Where the trail delivers, outside QUESTION_LOG_PREFIX, so the trail does not record
+# its own deliveries.
+AUDIT_PREFIX = "cloudtrail/"
+
+# S3 counts an object's age from its creation, so a redacted month's clock starts when
+# it is compacted and restarts if the month is rewritten. Compaction must run before
+# the month's first raw objects expire.
+QUESTION_LOG_RAW_RETENTION_DAYS = 365
+QUESTION_LOG_REDACTED_RETENTION_DAYS = 1825
+# Longer than either tier, so the record of an access outlasts what was accessed.
+AUDIT_RETENTION_DAYS = 2190
+
+aws.s3.BucketLifecycleConfiguration(
+    "ord_logs_bucket_lifecycle",
+    bucket=logs_bucket.id,
+    rules=[
+        aws.s3.BucketLifecycleConfigurationRuleArgs(
+            id="expire-question-log-raw",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
+                prefix=QUESTION_LOG_RAW_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
+                days=QUESTION_LOG_RAW_RETENTION_DAYS
+            ),
+        ),
+        aws.s3.BucketLifecycleConfigurationRuleArgs(
+            id="expire-question-log-redacted",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
+                prefix=QUESTION_LOG_REDACTED_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
+                days=QUESTION_LOG_REDACTED_RETENTION_DAYS
+            ),
+        ),
+        aws.s3.BucketLifecycleConfigurationRuleArgs(
+            id="expire-audit-log",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
+                prefix=AUDIT_PREFIX
+            ),
+            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
+                days=AUDIT_RETENTION_DAYS
+            ),
+        ),
+        # The parts of a failed multipart upload are billed until aborted. The empty
+        # prefix applies this rule to the whole bucket.
+        aws.s3.BucketLifecycleConfigurationRuleArgs(
+            id="abort-incomplete-uploads",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(prefix=""),
+            abort_incomplete_multipart_upload=aws.s3.BucketLifecycleConfigurationRuleAbortIncompleteMultipartUploadArgs(
+                days_after_initiation=7
+            ),
+        ),
+    ],
+)
+
+# No role is granted access to the bucket. make_web_service gives a task an execution
+# role but no task role, so a container has no identity to write as; a writer needs a
+# task role allowed s3:PutObject under QUESTION_LOG_RAW_PREFIX.
+
+# Named explicitly, so the bucket policy can name the trail before it exists.
+QUESTION_LOG_TRAIL_NAME = "question-log-access"
+
+
+def _cloudtrail_bucket_policy(arguments: list[str]) -> str:
+    """Returns the bucket policy letting the question log's trail deliver its files.
+
+    Args:
+        arguments: The bucket ARN, the account ID, and the region, in that order.
+
+    Returns:
+        The policy document. Delivery is confined to the trail's prefix and, by
+        ``aws:SourceArn``, to this trail; the ACL condition is the one CloudTrail sets
+        on every object it writes.
+    """
+    bucket_arn, account_id, region = arguments
+    trail_arn = (
+        f"arn:aws:cloudtrail:{region}:{account_id}:trail/{QUESTION_LOG_TRAIL_NAME}"
+    )
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:GetBucketAcl",
+                    "Resource": bucket_arn,
+                    "Condition": {"StringEquals": {"aws:SourceArn": trail_arn}},
+                },
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "cloudtrail.amazonaws.com"},
+                    "Action": "s3:PutObject",
+                    "Resource": f"{bucket_arn}/{AUDIT_PREFIX}AWSLogs/{account_id}/*",
+                    "Condition": {
+                        "StringEquals": {
+                            "s3:x-amz-acl": "bucket-owner-full-control",
+                            "aws:SourceArn": trail_arn,
+                        }
+                    },
+                },
+            ],
+        }
+    )
+
+
+_trail_delivery = pulumi.Output.all(
+    logs_bucket.arn,
+    aws.get_caller_identity_output().account_id,
+    aws.get_region_output().region,
+)
+logs_bucket_policy = aws.s3.BucketPolicy(
+    "ord_logs_bucket_policy",
+    bucket=logs_bucket.id,
+    policy=_trail_delivery.apply(_cloudtrail_bucket_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+)
+
+
+def _question_log_selectors(bucket_arn: str) -> list:
+    """Returns the data-event selectors for object-level access to the question log.
+
+    Args:
+        bucket_arn: ARN of the bucket holding the log.
+
+    Returns:
+        One advanced selector: every S3 object data event under QUESTION_LOG_PREFIX
+        (GetObject, HeadObject, and DeleteObject among them) except PutObject, which
+        the writer makes once per question.
+    """
+    return [
+        aws.cloudtrail.TrailAdvancedEventSelectorArgs(
+            name="question log access",
+            field_selectors=[
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventCategory", equals=["Data"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.type", equals=["AWS::S3::Object"]
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="resources.ARN",
+                    starts_withs=[f"{bucket_arn}/{QUESTION_LOG_PREFIX}"],
+                ),
+                aws.cloudtrail.TrailAdvancedEventSelectorFieldSelectorArgs(
+                    field="eventName", not_equals=["PutObject"]
+                ),
+            ],
+        )
+    ]
+
+
+question_log_trail = aws.cloudtrail.Trail(
+    "question_log_trail",
+    name=QUESTION_LOG_TRAIL_NAME,
+    s3_bucket_name=logs_bucket.id,
+    s3_key_prefix=AUDIT_PREFIX.rstrip("/"),
+    include_global_service_events=False,
+    is_multi_region_trail=False,
+    enable_log_file_validation=True,
+    advanced_event_selectors=logs_bucket.arn.apply(_question_log_selectors),  # ty: ignore[missing-argument, invalid-argument-type]
+    opts=pulumi.ResourceOptions(depends_on=[logs_bucket_policy]),
+)
+
+pulumi.export("logs_bucket", logs_bucket.bucket)
+pulumi.export("question_log_raw_prefix", QUESTION_LOG_RAW_PREFIX)
+pulumi.export("question_log_redacted_prefix", QUESTION_LOG_REDACTED_PREFIX)
+pulumi.export("question_log_trail", question_log_trail.name)
 
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("load_balancer_dns_name", load_balancer.dns_name)
