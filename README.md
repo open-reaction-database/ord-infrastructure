@@ -86,6 +86,14 @@ pulumi stack output --stack ord/prod --show-secrets <name>
 
 The Pulumi Cloud console is at <https://app.pulumi.com/ord>.
 
+### Container logs
+
+The `stacks/editor` and `stacks/viewer` tasks send their containers' stdout and stderr to a CloudWatch log group that awsx creates, named `service-` plus a generated suffix (the task definition's `awslogs-group` option). CloudWatch deletes each event once it is older than the `log_retention_days` the stack passes to [`make_web_service`](ord_infrastructure/shared.py). To follow one:
+
+```sh
+aws logs tail <log group> --follow
+```
+
 ## Recommended deploy order
 
 When bringing the stacks up from scratch:

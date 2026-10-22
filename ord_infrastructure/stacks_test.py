@@ -143,6 +143,28 @@ def test_editor_stack_gives_the_task_a_download_link_key(
     return service.urn.apply(check)
 
 
+@pytest.mark.parametrize("pulumi_mocks", ["editor", "viewer"], indirect=True)
+@pulumi.runtime.test
+def test_service_stacks_keep_container_logs_for_90_days(
+    pulumi_mocks, services, monkeypatch
+):
+    # The clean-main gate would inspect the developer's ord-app checkout.
+    monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / pulumi.get_project())
+    runpy.run_path("__main__.py")
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        log_group = service["taskDefinitionArgs"]["logGroup"]["args"]
+        # Pinned rather than bounded: a shorter period deletes the events already older
+        # than it, and 0 keeps every event.
+        assert log_group["retentionInDays"] == 90
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
 def _run_viewer_stack(monkeypatch, config: dict[str, str] | None = None) -> None:
     """Run the viewer's stack program under the mocks, with `config` as its config."""
     # The clean-main gate would inspect the developer's ord-app checkout.
