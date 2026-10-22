@@ -521,8 +521,10 @@ QUESTION_LOG_PREFIX = "nl-log/"
 QUESTION_LOG_RAW_PREFIX = "nl-log/raw/"
 QUESTION_LOG_REDACTED_PREFIX = "nl-log/redacted/"
 # Where the trail delivers, outside QUESTION_LOG_PREFIX, so the trail does not record
-# its own deliveries.
-AUDIT_PREFIX = "cloudtrail/"
+# its own deliveries. Each trail gets its own folder under cloudtrail/: CloudTrail's log
+# file names do not name the trail, so trails sharing a prefix would mix their files
+# under one expiration rule.
+QUESTION_LOG_AUDIT_PREFIX = "cloudtrail/nl-log/"
 
 # S3 counts an object's age from its creation, so a redacted month's clock starts when
 # it is compacted and restarts if the month is rewritten. Compaction must run before
@@ -530,7 +532,7 @@ AUDIT_PREFIX = "cloudtrail/"
 QUESTION_LOG_RAW_RETENTION_DAYS = 365
 QUESTION_LOG_REDACTED_RETENTION_DAYS = 1825
 # Longer than either tier, so the record of an access outlasts what was accessed.
-AUDIT_RETENTION_DAYS = 2190
+QUESTION_LOG_AUDIT_RETENTION_DAYS = 2190
 
 aws.s3.BucketLifecycleConfiguration(
     "ord_logs_bucket_lifecycle",
@@ -557,13 +559,13 @@ aws.s3.BucketLifecycleConfiguration(
             ),
         ),
         aws.s3.BucketLifecycleConfigurationRuleArgs(
-            id="expire-audit-log",
+            id="expire-question-log-audit",
             status="Enabled",
             filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(
-                prefix=AUDIT_PREFIX
+                prefix=QUESTION_LOG_AUDIT_PREFIX
             ),
             expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
-                days=AUDIT_RETENTION_DAYS
+                days=QUESTION_LOG_AUDIT_RETENTION_DAYS
             ),
         ),
         # The parts of a failed multipart upload are billed until aborted. The empty
@@ -617,7 +619,7 @@ def _cloudtrail_bucket_policy(arguments: list[str]) -> str:
                     "Effect": "Allow",
                     "Principal": {"Service": "cloudtrail.amazonaws.com"},
                     "Action": "s3:PutObject",
-                    "Resource": f"{bucket_arn}/{AUDIT_PREFIX}AWSLogs/{account_id}/*",
+                    "Resource": f"{bucket_arn}/{QUESTION_LOG_AUDIT_PREFIX}AWSLogs/{account_id}/*",
                     "Condition": {
                         "StringEquals": {
                             "s3:x-amz-acl": "bucket-owner-full-control",
@@ -679,7 +681,7 @@ question_log_trail = aws.cloudtrail.Trail(
     "question_log_trail",
     name=QUESTION_LOG_TRAIL_NAME,
     s3_bucket_name=logs_bucket.id,
-    s3_key_prefix=AUDIT_PREFIX.rstrip("/"),
+    s3_key_prefix=QUESTION_LOG_AUDIT_PREFIX.rstrip("/"),
     include_global_service_events=False,
     is_multi_region_trail=False,
     enable_log_file_validation=True,

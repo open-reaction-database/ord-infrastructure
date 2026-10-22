@@ -189,11 +189,11 @@ account-wide one in the [`account` stack](../account/README.md).
 | --- | --- | --- |
 | `nl-log/raw/` | one JSON object per question, from `ord_schema.search.nl_log.S3Sink` (its default prefix) | 365 days |
 | `nl-log/redacted/` | months compacted by `nl_log.compact(redact=True)`, with the free-text fields emptied | 1825 days |
-| `cloudtrail/` | the trail's log and digest files | 2190 days |
+| `cloudtrail/nl-log/` | the question log trail's log and digest files | 2190 days |
 
 A fourth rule aborts incomplete multipart uploads after 7 days, across the bucket.
 
-- **Prefixes.** Neither log prefix contains the other, so no object matches two
+- **Prefixes.** No expiration prefix contains another, so no object matches two
   expiration rules. Where rules overlap, S3 applies the shorter expiration, which
   would expire the redacted months on the raw clock.
 - **Clocks.** S3 counts an object's age from its creation. A raw object's clock starts
@@ -207,5 +207,8 @@ A fourth rule aborts incomplete multipart uploads after 7 days, across the bucke
   task role allowed `s3:PutObject` under `nl-log/raw/`.
 - **Trail.** `question-log-access` records every S3 object data event under `nl-log/`
   except `PutObject`, which the writer makes once per question. It delivers under
-  `cloudtrail/`, outside the log's prefix, so it does not record its own deliveries,
-  and the bucket policy admits deliveries from this trail only.
+  `cloudtrail/nl-log/`, outside the log's prefix, so it does not record its own
+  deliveries, and the bucket policy admits deliveries from this trail only. A trail
+  for another service gets its own folder under `cloudtrail/`: CloudTrail's log file
+  names do not name the trail, so trails sharing a folder would mix their files under
+  one expiration rule.
