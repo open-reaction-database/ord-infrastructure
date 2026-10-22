@@ -24,9 +24,10 @@ are `pg_size_pretty`'s, in multiples of 1024 bytes.
 | database | size | used by |
 | --- | --- | --- |
 | `app` | 608 MB | ord-app's editor, both the `prod` and `staging` stacks |
-| `editor` | 282 MB | no stack; its tables had no reads from the instance's restart on 2026-10-09 to 2026-10-21 |
+| `editor` | 282 MB | nothing known: ord-interface's legacy Flask editor, removed in [ord-interface#172](https://github.com/open-reaction-database/ord-interface/pull/172). Its tables had no reads from the instance's restart on 2026-10-09 to 2026-10-21 |
 
-The working set is `app`'s `reaction` table, 598 MB of the database:
+The sizing treats `editor` as cold and counts it only toward the total. The working
+set is `app`'s `reaction` table, 598 MB of the database:
 
 - **Heap and indexes, 222 MB.** Most of the editor's reads land here: a 151 MB heap
   and 71 MB of btree indexes, the largest `uq_pb_reaction_id_dataset_id` (33 MB).
