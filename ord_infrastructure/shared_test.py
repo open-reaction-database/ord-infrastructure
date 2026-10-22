@@ -156,7 +156,11 @@ def test_sibling_head_returns_unknown_outside_a_repo(tmp_path):
 
 
 def _web_service(
-    sibling: pathlib.Path, *, secret_arns: Sequence[str] = (), **kwargs
+    sibling: pathlib.Path,
+    *,
+    secret_arns: Sequence[str] = (),
+    log_retention_days: int = 30,
+    **kwargs,
 ) -> awsx.ecs.FargateService:
     """Call make_web_service on `sibling`, adding `kwargs` to the shared arguments."""
     return make_web_service(
@@ -169,6 +173,7 @@ def _web_service(
         sibling_path=str(sibling),
         dockerfile=str(sibling / "Dockerfile"),
         secret_arns=secret_arns,
+        log_retention_days=log_retention_days,
         enforce_clean=False,
         **kwargs,
     )
@@ -266,6 +271,21 @@ def test_make_web_service_leaves_grace_period_and_storage_to_aws(sibling, pulumi
 
 
 @pulumi.runtime.test
+def test_make_web_service_sets_log_retention(sibling, pulumi_mocks):
+    service = _web_service(sibling, log_retention_days=14)
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        # Arguments to the group awsx creates, not an `existing` group, so the deployed
+        # group keeps its URN.
+        assert service["taskDefinitionArgs"]["logGroup"] == {
+            "args": {"retentionInDays": 14}
+        }
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
 def test_make_web_service_lets_the_role_read_each_secret(sibling, pulumi_mocks):
     service = _web_service(sibling, secret_arns=["arn:0", "arn:1"])
 
@@ -308,5 +328,6 @@ def test_make_web_service_rejects_too_long_name_prefix():
             sibling_path="../../../ord-app",
             dockerfile="../../../ord-app/Dockerfile",
             secret_arns=[],
+            log_retention_days=30,
             name_prefix="x" * 30,
         )

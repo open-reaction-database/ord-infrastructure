@@ -182,6 +182,7 @@ def make_web_service(
     sibling_path: str,
     dockerfile: str,
     secret_arns: Sequence[pulumi.Input[str]],
+    log_retention_days: int,
     environment: Sequence[awsx.ecs.TaskDefinitionKeyValuePairArgs] | None = None,
     secrets: Sequence[awsx.ecs.TaskDefinitionSecretArgs] | None = None,
     build_args: Mapping[str, pulumi.Input[str]] | None = None,
@@ -227,6 +228,9 @@ def make_web_service(
         secret_arns: Secrets Manager ARNs the execution role may read. Every ARN
             referenced by a `secrets` entry's `value_from` must also be listed here,
             or the task will fail to start with an IAM authorization error.
+        log_retention_days: Days the CloudWatch log group that receives the
+            container's stdout and stderr keeps each event; one of the periods
+            CloudWatch accepts (1, 3, 5, 7, 14, 30, 60, 90, ...). 0 keeps every event.
         environment: Plain environment variables for the container.
         secrets: Secrets injected into the container via the ECS `secrets` directive.
             See `secret_arns` — the two must be kept in sync.
@@ -389,6 +393,11 @@ def make_web_service(
             task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
                 execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(
                     role_arn=execution_role.arn
+                ),
+                # Configures the log group awsx creates for the task, so the group keeps
+                # its URN and its generated name.
+                log_group=awsx.awsx.DefaultLogGroupArgs(
+                    args=awsx.awsx.LogGroupArgs(retention_in_days=log_retention_days)
                 ),
                 runtime_platform=aws.ecs.TaskDefinitionRuntimePlatformArgs(
                     cpu_architecture=CPU_ARCHITECTURE,

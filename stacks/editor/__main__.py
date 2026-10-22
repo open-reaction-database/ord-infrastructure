@@ -46,6 +46,8 @@ name_prefix = None if subdomain == "app" else subdomain
 # Staging uses the same size.
 cpu = config.get_int("cpu") or 2048
 memory = config.get_int("memory") or 4096
+# Days CloudWatch keeps each event the container writes to stdout or stderr.
+log_retention_days = 90
 
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
@@ -103,6 +105,7 @@ make_web_service(
         backend.get_output("rds_password_secret_arn"),
         download_link_secret.arn,
     ],
+    log_retention_days=log_retention_days,
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name="PG_DSN", value=pg_dsn),
         *(

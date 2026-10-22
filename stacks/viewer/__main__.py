@@ -52,6 +52,9 @@ EPHEMERAL_STORAGE_GIB = 50
 # still starting is not replaced; one that fails to open its corpus exits on its own.
 HEALTH_CHECK_GRACE_PERIOD_SECONDS = 30 * 60
 
+# Days CloudWatch keeps each event the container writes to stdout or stderr.
+LOG_RETENTION_DAYS = 90
+
 backend = pulumi.StackReference("ord/backend/prod")
 domain = pulumi.StackReference("ord/domain/prod")
 
@@ -111,6 +114,7 @@ make_web_service(
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/deploy/viewer/Dockerfile",
     secret_arns=secret_arns,
+    log_retention_days=LOG_RETENTION_DAYS,
     environment=[
         awsx.ecs.TaskDefinitionKeyValuePairArgs(name=name, value=value)
         for name, value in environment.items()
