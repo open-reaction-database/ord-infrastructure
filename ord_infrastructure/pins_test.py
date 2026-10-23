@@ -58,6 +58,13 @@ def test_reads_each_pin_the_program_assigns(tmp_path):
         "A = 'a'\nfor A in ['b']:\n    pass\n",
         # Bound together with another name.
         "A = B = 'a'\n",
+        # Rebound by a statement other than an assignment.
+        "A = 'a'\nimport os as A\n",
+        "A = 'a'\nfrom os import path as A\n",
+        "A = 'a'\ndef A():\n    pass\n",
+        "A = 'a'\nclass A:\n    pass\n",
+        "A = 'a'\ntry:\n    pass\nexcept Exception as A:\n    pass\n",
+        "A = 'a'\nmatch 0:\n    case A:\n        pass\n",
     ],
 )
 def test_refuses_a_pin_the_program_does_not_assign_one_literal(tmp_path, source):

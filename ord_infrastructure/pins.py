@@ -27,6 +27,26 @@ import pathlib
 from collections.abc import Sequence
 
 
+def _bound(node: ast.AST) -> list[str]:
+    """Returns the names one syntax node binds, in whichever statement binds them."""
+    match node:
+        case ast.Name(ctx=ast.Store()):
+            return [node.id]
+        case ast.alias():
+            return [node.asname or node.name.split(".")[0]]
+        case (
+            ast.FunctionDef()
+            | ast.AsyncFunctionDef()
+            | ast.ClassDef()
+            | ast.ExceptHandler()
+            | ast.MatchAs()
+            | ast.MatchStar()
+        ) if node.name is not None:
+            return [node.name]
+        case _:
+            return []
+
+
 def read_pins(program: pathlib.Path, names: Sequence[str]) -> dict[str, str]:
     """Returns the string literal each name is assigned at a program's top level.
 
@@ -52,11 +72,7 @@ def read_pins(program: pathlib.Path, names: Sequence[str]) -> dict[str, str]:
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     }
-    bindings = [
-        node.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
-    ]
+    bindings = [name for node in ast.walk(tree) for name in _bound(node)]
     pins = {}
     for name in names:
         if name not in literals or bindings.count(name) != 1:
