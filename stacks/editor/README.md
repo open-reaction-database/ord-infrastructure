@@ -51,6 +51,11 @@ pulumi -C stacks/editor up      --stack ord/staging
 pulumi -C stacks/editor destroy --stack ord/staging
 ```
 
+The **Deploy the editor** workflow also brings staging up or updates it: choose the
+`staging` stack and name the ord-app branch, tag, or commit in `ord_app_ref` (see
+[Deploying from GitHub Actions](../../README.md#from-github-actions)). Tearing staging
+down stays a terminal step.
+
 Auth0 already lists `app-staging.open-reaction-database.org` as an allowed
 callback/logout URL (see `stacks/auth`), so login works against staging without
 further changes. Staging uses prod's `app` database, so it reads and writes prod's

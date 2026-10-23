@@ -161,3 +161,60 @@ bdeadman_billing_membership = aws.iam.UserGroupMembership(
     user="bdeadman",
     opts=PROTECT,
 )
+
+# The workflows in .github/workflows/deploy_*.yml deploy the web services. They sign in
+# through GitHub's OIDC provider, so no long-lived AWS key exists for them.
+GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
+# The deploy role trusts only jobs in these deployment environments of this repository,
+# which the repository's settings let only `main` use.
+DEPLOY_SUBJECTS = [
+    f"repo:open-reaction-database/ord-infrastructure:environment:{environment}"
+    for environment in ("prod", "staging")
+]
+
+github_oidc_provider = aws.iam.OpenIdConnectProvider(
+    "github_oidc_provider",
+    url=f"https://{GITHUB_OIDC_HOST}",
+    client_id_lists=["sts.amazonaws.com"],
+    opts=PROTECT,
+)
+
+
+def _deploy_trust_policy(provider_arn: str) -> str:
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Federated": provider_arn},
+                    "Action": "sts:AssumeRoleWithWebIdentity",
+                    "Condition": {
+                        "StringEquals": {
+                            f"{GITHUB_OIDC_HOST}:aud": "sts.amazonaws.com",
+                            f"{GITHUB_OIDC_HOST}:sub": DEPLOY_SUBJECTS,
+                        },
+                    },
+                },
+            ],
+        }
+    )
+
+
+deploy_role = aws.iam.Role(
+    "deploy_role",
+    assume_role_policy=github_oidc_provider.arn.apply(_deploy_trust_policy),  # ty: ignore[missing-argument, invalid-argument-type]
+    name="ord-infrastructure-deploy",
+    opts=PROTECT,
+)
+
+# Administrator, because the stacks it deploys create IAM roles and policies, which would
+# let it grant itself anything anyway; the trust policy is what limits who can use it.
+deploy_role_admin = aws.iam.RolePolicyAttachment(
+    "deploy_role_admin",
+    role=deploy_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AdministratorAccess",
+    opts=PROTECT,
+)
+
+pulumi.export("deploy_role_arn", deploy_role.arn)

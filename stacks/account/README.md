@@ -8,6 +8,7 @@ Pulumi stack for account-scoped resources: IAM, IAM Identity Center (SSO), the c
 - **`OrganizationAccountAccessRole`** with the managed `AdministratorAccess` policy attached — used by the AWS Organizations management account to administer this member account.
 - **Billing access** for `bdeadman`: IAM user, group membership in `BillingFullAccessGroup`, and the `IAMUserChangePassword` attachment so the user can rotate their own password.
 - **Account-level S3 Block Public Access** with all four flags `true`, blocking public exposure for every present and future bucket in the account.
+- **GitHub deploy role**: GitHub's OIDC provider and the `ord-infrastructure-deploy` role, which the [deploy workflows](../../README.md#from-github-actions) assume. It trusts only jobs in this repository's `prod` and `staging` environments and has `AdministratorAccess`, since the stacks it deploys create IAM roles and policies. The stack exports its ARN as `deploy_role_arn`. An account holds one provider per URL, so if `token.actions.githubusercontent.com` already has one, import it before the first `up`: `pulumi import aws:iam/openIdConnectProvider:OpenIdConnectProvider github_oidc_provider <provider ARN> --protect`.
 
 ## `PROTECT`
 

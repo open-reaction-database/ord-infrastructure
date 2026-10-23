@@ -66,6 +66,23 @@ pulumi up      --stack ord/prod   # apply
 
 Always run `preview` first and review the diff. Every project has a `prod` stack, and `stacks/editor` also has a `staging` stack; see [`stacks/editor/README.md`](stacks/editor/README.md).
 
+### From GitHub Actions
+
+Two workflows deploy the web services. Neither runs on its own: start one from the repository's Actions tab, or with `gh workflow run`.
+
+| Workflow | Stack | Builds ord-app from |
+|---|---|---|
+| Deploy the editor ([`deploy_editor.yml`](.github/workflows/deploy_editor.yml)) | `stacks/editor`, `prod` or `staging` | `ord_app_ref`, `main` by default; prod accepts only `main` |
+| Deploy the viewer ([`deploy_viewer.yml`](.github/workflows/deploy_viewer.yml)) | `stacks/viewer`, `prod` | `main` |
+
+Each runs `preview` unless you choose `up`, so the routine is the same as from a terminal: run `preview`, read the diff in the run's log, then run `up`. A run checks out ord-app beside this repository, installs the stack's dependencies at the versions in `uv.lock`, builds the image on an arm64 runner, and signs in to AWS as the account stack's deploy role through GitHub's OIDC provider, so no AWS key is stored in GitHub.
+
+One-time setup:
+
+1. `pulumi up` the [`account`](stacks/account/README.md) stack, which creates the deploy role and exports its ARN as `deploy_role_arn`.
+2. In the repository's settings, under **Secrets and variables → Actions → Variables**, set `AWS_DEPLOY_ROLE_ARN` to that ARN.
+3. Under **Environments**, create `prod` and `staging`. In each, limit **Deployment branches** to `main`, and add a `PULUMI_ACCESS_TOKEN` secret holding a Pulumi access token for the `ord` organization. The deploy role trusts any job in these two environments, so the branch limit is what keeps another branch from deploying. To make each run wait for approval, add required reviewers to the environment.
+
 ### Building images from sibling repos
 
 `stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.

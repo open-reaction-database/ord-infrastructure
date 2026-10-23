@@ -78,6 +78,9 @@ class RecordingMocks(pulumi.runtime.Mocks):
             "aws:s3/bucket:Bucket": {
                 "arn": f"arn:aws:s3:::{args.inputs.get('bucket', args.name)}"
             },
+            "aws:iam/openIdConnectProvider:OpenIdConnectProvider": {
+                "arn": f"arn:aws:iam::123456789012:oidc-provider/{args.name}"
+            },
         }
         outputs = dict(args.inputs) | computed.get(args.typ, {})
         # An output the SDK reads as a reference to another resource, which an echoed

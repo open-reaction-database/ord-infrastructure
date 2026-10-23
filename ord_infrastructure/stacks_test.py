@@ -376,3 +376,40 @@ def test_backend_stack_question_log_expiry_and_trail_agree(pulumi_mocks, monkeyp
         )
 
     return program["question_log_trail"].urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_account_stack_lets_only_the_deploy_environments_assume_the_deploy_role(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    role = runpy.run_path("__main__.py")["deploy_role"]
+
+    def check(_: object) -> None:
+        provider = pulumi_mocks.inputs_of(
+            "aws:iam/openIdConnectProvider:OpenIdConnectProvider"
+        )
+        assert provider["url"] == "https://token.actions.githubusercontent.com"
+        (inputs,) = [
+            r.inputs for r in pulumi_mocks.resources if r.name == "deploy_role"
+        ]
+        (statement,) = json.loads(inputs["assumeRolePolicy"])["Statement"]
+        assert statement["Principal"] == {
+            "Federated": "arn:aws:iam::123456789012:oidc-provider/github_oidc_provider"
+        }
+        assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
+        # Exact matches only: a wildcard subject would let another repository, or a job
+        # outside the environments that only main may use, deploy.
+        assert statement["Condition"] == {
+            "StringEquals": {
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                "token.actions.githubusercontent.com:sub": [
+                    "repo:open-reaction-database/ord-infrastructure:environment:prod",
+                    "repo:open-reaction-database/ord-infrastructure:environment:staging",
+                ],
+            }
+        }
+
+    return role.urn.apply(check)
