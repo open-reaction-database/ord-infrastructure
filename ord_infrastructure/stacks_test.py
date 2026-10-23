@@ -442,8 +442,8 @@ def test_account_stack_lets_only_the_deploy_environments_get_pulumi_tokens(
             }
             for environment in ("prod", "staging")
         ]
-        # Pulumi Cloud reads *, ?, and . in a rule as wildcards, so these rules match
-        # their claims exactly.
+        # Pulumi Cloud reads *, ?, and . in a rule as wildcards, so a rule that matches
+        # its claim exactly holds none of them.
         for policy in inputs["policies"]:
             assert not re.search(r"[*?.]", "".join(policy["rules"].values()))
 
@@ -499,14 +499,25 @@ def test_deploy_workflows_request_the_tokens_the_pulumi_issuer_grants(
     organization = runpy.run_path("__main__.py")["PULUMI_ORGANIZATION"]
     for workflow in sorted(WORKFLOWS.glob("deploy_*.yml")):
         (job,) = yaml.safe_load(workflow.read_text())["jobs"].values()
-        (step,) = [
-            step
-            for step in job["steps"]
+        steps = job["steps"]
+        (sign_in,) = [
+            index
+            for index, step in enumerate(steps)
             if step.get("uses", "").startswith("pulumi/auth-actions@")
         ]
         # The organization names the audience of the job's GitHub token, which the
         # issuer's policies match.
-        assert step["with"] == {
+        assert steps[sign_in]["with"] == {
             "organization": organization,
             "requested-token-type": "urn:pulumi:token-type:access_token:organization",
         }, workflow.name
+        runs_pulumi = [
+            index
+            for index, step in enumerate(steps)
+            if re.search(r"\bpulumi (up|preview)\b", step.get("run", ""))
+        ]
+        assert runs_pulumi, workflow.name
+        assert sign_in < min(runs_pulumi), workflow.name
+        # A step's own PULUMI_ACCESS_TOKEN would override the one the sign-in exports.
+        for step in steps:
+            assert "PULUMI_ACCESS_TOKEN" not in step.get("env", {}), workflow.name
