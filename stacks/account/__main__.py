@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Account-scoped resources: IAM, AWS Identity Center (SSO), and S3 public-access controls."""
+"""Account-scoped resources: IAM, SSO, S3 public-access controls, and deploy sign-in."""
 
 import json
 
 import pulumi
 import pulumi_aws as aws
+import pulumi_pulumiservice as pulumiservice
 
 PROTECT = pulumi.ResourceOptions(protect=True)
 
@@ -163,10 +164,11 @@ bdeadman_billing_membership = aws.iam.UserGroupMembership(
 )
 
 # The workflows in .github/workflows/deploy_*.yml deploy the web services. They sign in
-# through GitHub's OIDC provider, which issues each job a token, so they hold no AWS key.
+# through GitHub's OIDC provider, which issues each job a token, so they hold no AWS key
+# and no Pulumi token.
 GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
-# The deployment environments of this repository whose jobs the deploy role trusts. Each
-# environment's settings name the branches whose jobs may run in it.
+# The deployment environments of this repository whose jobs the deploy role and Pulumi
+# Cloud trust. Each environment's settings name the branches whose jobs may run in it.
 DEPLOY_ENVIRONMENTS = ("prod", "staging")
 DEPLOY_SUBJECTS = [
     f"repo:open-reaction-database/ord-infrastructure:environment:{environment}"
@@ -222,6 +224,29 @@ deploy_role_admin = aws.iam.RolePolicyAttachment(
     "deploy_role_admin",
     role=deploy_role.name,
     policy_arn="arn:aws:iam::aws:policy/AdministratorAccess",
+    opts=PROTECT,
+)
+
+PULUMI_ORGANIZATION = "ord"
+
+# Pulumi Cloud exchanges the same jobs' GitHub tokens for organization access tokens.
+# pulumi/auth-actions requests GitHub's token with the organization as its audience.
+pulumi_oidc_issuer = pulumiservice.OidcIssuer(
+    "pulumi_oidc_issuer",
+    name="github-actions",
+    organization=PULUMI_ORGANIZATION,
+    url=f"https://{GITHUB_OIDC_HOST}",
+    policies=[
+        pulumiservice.AuthPolicyDefinitionArgs(
+            decision=pulumiservice.AuthPolicyDecision.ALLOW,
+            token_type=pulumiservice.AuthPolicyTokenType.ORGANIZATION,
+            # Admin, so the token can update every stack the workflows deploy, whatever
+            # stack permission the organization gives its members.
+            authorized_permissions=[pulumiservice.AuthPolicyPermissionLevel.ADMIN],
+            rules={"aud": f"urn:pulumi:org:{PULUMI_ORGANIZATION}", "sub": subject},
+        )
+        for subject in DEPLOY_SUBJECTS
+    ],
     opts=PROTECT,
 )
 

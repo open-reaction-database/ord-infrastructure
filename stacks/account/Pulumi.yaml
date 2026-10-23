@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: account
-description: Account-scoped resources — IAM users/roles/policies, AWS Identity Center (SSO), and account-level controls like S3 Block Public Access.
+description: Account-scoped resources — IAM users/roles/policies, AWS Identity Center (SSO), account-level controls like S3 Block Public Access, and the deploy workflows' OIDC sign-in to AWS and Pulumi Cloud.
 runtime:
   name: python
   options:

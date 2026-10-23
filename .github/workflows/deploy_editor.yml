@@ -40,7 +40,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # Signs in to AWS through GitHub's OIDC provider.
+  id-token: write  # Signs in to AWS and Pulumi Cloud through GitHub's OIDC provider.
 
 # One run per stack at a time; a second waits rather than failing on Pulumi's stack lock.
 concurrency:
@@ -51,8 +51,8 @@ jobs:
   deploy:
     # The image is built for the platform the service runs on, so nothing is emulated.
     runs-on: ubuntu-24.04-arm
-    # The deploy role trusts only jobs in this environment, whose settings name the
-    # branches that may deploy and hold the Pulumi token.
+    # The deploy role and Pulumi Cloud trust only jobs in this environment, whose
+    # settings name the branches that may deploy.
     environment: ${{ inputs.stack }}
     # Covers the image build and `up`'s wait, bounded by the provider's 20-minute default,
     # for the service to reach a steady state.
@@ -95,10 +95,15 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
+      # Exchanges the job's GitHub token for a Pulumi organization token, which it
+      # exports as PULUMI_ACCESS_TOKEN.
+      - uses: pulumi/auth-actions@159c3e431aab767d4519b96f3f784d7d3d725622 # v2.1.1
+        with:
+          organization: ord
+          requested-token-type: urn:pulumi:token-type:access_token:organization
       - name: pulumi ${{ inputs.command }}
         working-directory: ord-infrastructure/stacks/editor
         env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           STACK: ${{ inputs.stack }}
           COMMAND: ${{ inputs.command }}
         run: |
