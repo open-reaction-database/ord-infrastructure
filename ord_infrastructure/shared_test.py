@@ -259,6 +259,17 @@ def test_make_web_service_passes_grace_period_and_storage(sibling, pulumi_mocks)
 
 
 @pulumi.runtime.test
+def test_make_web_service_rolls_back_a_failing_deployment(sibling, pulumi_mocks):
+    service = _web_service(sibling)
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        assert service["deploymentCircuitBreaker"] == {"enable": True, "rollback": True}
+
+    return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
 def test_make_web_service_leaves_grace_period_and_storage_to_aws(sibling, pulumi_mocks):
     service = _web_service(sibling)
 

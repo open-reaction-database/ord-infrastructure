@@ -390,6 +390,12 @@ def make_web_service(
                 security_groups=[security_group.id],
             ),
             health_check_grace_period_seconds=health_check_grace_period_seconds,
+            # A deployment whose tasks keep failing is rolled back to the last one that
+            # completed, rather than retried until the next deploy. The provider's
+            # steady-state wait reports a rolled-back deployment as a failed update.
+            deployment_circuit_breaker=aws.ecs.ServiceDeploymentCircuitBreakerArgs(
+                enable=True, rollback=True
+            ),
             task_definition_args=awsx.ecs.FargateServiceTaskDefinitionArgs(
                 execution_role=awsx.awsx.DefaultRoleWithPolicyArgs(
                     role_arn=execution_role.arn

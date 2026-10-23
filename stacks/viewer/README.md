@@ -22,7 +22,7 @@ The revisions in place are ord-artifacts `297f7e5`, holding the build uploaded a
 | Ephemeral storage | 50 GiB | The image's layers, the 4.1 GiB corpus, and DuckDB's spill share it; Fargate's default is 20 GiB. |
 | Health-check grace period | 30 minutes | That container passed its health check 9.4 minutes after starting, fetching without a token: 5.6 to fetch the artifacts, 1.0 to fetch the sources, and 2.6 to pair and open. The first Fargate task, also without a token, passed it 5.3 minutes after it began running (2026-10-17). |
 
-A task starts serving only once it has fetched and opened its corpus, so a deploy keeps the old task until the new one passes its health check, `/api/health`. A task whose corpus fails to fetch or open exits, and ECS starts another.
+A task starts serving only once it has fetched and opened its corpus, so a deploy keeps the old task until the new one passes its health check, `/api/health`. A task whose corpus fails to fetch or open exits, and ECS starts another. Once a deployment's failed tasks reach the threshold of ECS's deployment circuit breaker, ECS rolls the service back to the last deployment that completed, and the `up` fails.
 
 ## Secrets
 
