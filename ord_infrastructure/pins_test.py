@@ -65,6 +65,11 @@ def test_reads_each_pin_the_program_assigns(tmp_path):
         "A = 'a'\nclass A:\n    pass\n",
         "A = 'a'\ntry:\n    pass\nexcept Exception as A:\n    pass\n",
         "A = 'a'\nmatch 0:\n    case A:\n        pass\n",
+        "A = 'a'\nmatch {}:\n    case {**A}:\n        pass\n",
+        "A = 'a'\nmatch []:\n    case [*A]:\n        pass\n",
+        # Deleted, or possibly rebound by a star import.
+        "A = 'a'\ndel A\n",
+        "A = 'a'\nfrom os import *\n",
     ],
 )
 def test_refuses_a_pin_the_program_does_not_assign_one_literal(tmp_path, source):

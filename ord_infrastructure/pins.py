@@ -26,14 +26,21 @@ import ast
 import pathlib
 from collections.abc import Sequence
 
+# What _bound returns for a star import, which can bind any name.
+_EVERY_NAME = "*"
+
 
 def _bound(node: ast.AST) -> list[str]:
-    """Returns the names one syntax node binds, in whichever statement binds them."""
+    """Returns the names one syntax node binds or deletes, in whichever statement."""
     match node:
-        case ast.Name(ctx=ast.Store()):
+        case ast.Name(ctx=ast.Store() | ast.Del()):
             return [node.id]
+        case ast.alias(name="*"):
+            return [_EVERY_NAME]
         case ast.alias():
             return [node.asname or node.name.split(".")[0]]
+        case ast.MatchMapping() if node.rest is not None:
+            return [node.rest]
         case (
             ast.FunctionDef()
             | ast.AsyncFunctionDef()
@@ -58,9 +65,9 @@ def read_pins(program: pathlib.Path, names: Sequence[str]) -> dict[str, str]:
         Each name's value, keyed by the name.
 
     Raises:
-        ValueError: If the program binds a name anywhere but in one top-level
-            assignment of a string literal, since its value is then what the
-            program computes rather than what it reads.
+        ValueError: If the program binds or deletes a name anywhere but in one
+            top-level assignment of a string literal, or star-imports, since the
+            name's value is then what the program computes rather than what it reads.
     """
     tree = ast.parse(program.read_text(), filename=str(program))
     literals = {
@@ -75,7 +82,7 @@ def read_pins(program: pathlib.Path, names: Sequence[str]) -> dict[str, str]:
     bindings = [name for node in ast.walk(tree) for name in _bound(node)]
     pins = {}
     for name in names:
-        if name not in literals or bindings.count(name) != 1:
+        if name not in literals or bindings.count(name) != 1 or _EVERY_NAME in bindings:
             raise ValueError(
                 f"{program} binds {name} other than in one top-level assignment of a "
                 "string literal"
