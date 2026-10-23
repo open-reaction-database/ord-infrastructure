@@ -274,6 +274,7 @@ dependencies = [
     { name = "pulumi-aws" },
     { name = "pulumi-awsx" },
     { name = "pulumi-postgresql" },
+    { name = "pulumi-pulumiservice" },
     { name = "pulumi-random" },
 ]
 
@@ -292,6 +293,7 @@ requires-dist = [
     { name = "pulumi-aws", specifier = ">=7.0.0,<8.0.0" },
     { name = "pulumi-awsx", specifier = ">=3.0.0,<4.0.0" },
     { name = "pulumi-postgresql", specifier = ">=3.0.0,<4.0.0" },
+    { name = "pulumi-pulumiservice", specifier = ">=1.0.0,<2.0.0" },
     { name = "pulumi-random", specifier = ">=4.0.0,<5.0.0" },
 ]
 
@@ -455,6 +457,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/aa/e7/39926c6a9450809248f15f8ce7ce0fefb002af5333eaf9c31f45cf8b1739/pulumi_postgresql-3.17.0.tar.gz", hash = "sha256:1b456d9bf429ff97fe07e62e88f93ca7797fd6ce49cf3b2d162b08cf5983d384", size = 50988, upload-time = "2026-05-22T12:38:37.14Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/b0/71b731ec674f66445a16b0858ddb014204f202bd6908ed11e9ce8111ce2f/pulumi_postgresql-3.17.0-py3-none-any.whl", hash = "sha256:04e2626622e13cb86f255dc99ea595e6d9301cdbf42eb96d32b5e4bd43efab61", size = 76822, upload-time = "2026-05-22T12:38:35.628Z" },
+]
+
+[[package]]
+name = "pulumi-pulumiservice"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/85/9ae45a566806306aec09f8d1c01577d6512e005f9ea340831ae1a6303568/pulumi_pulumiservice-1.5.0.tar.gz", hash = "sha256:4291c0b1c4144ac607564595033726965aad20632373a383484f4f3d55cf3b65", size = 116309, upload-time = "2026-10-19T18:14:55.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/76/663f2b816832ba1c206e49ce37d2e3fa391100a2b3bf14fcee686a815c97/pulumi_pulumiservice-1.5.0-py3-none-any.whl", hash = "sha256:f24f54d70b202dd35a9a8952a36f8342c59a18328e470095605497125286d541", size = 241593, upload-time = "2026-10-19T18:14:54.588Z" },
 ]
 
 [[package]]

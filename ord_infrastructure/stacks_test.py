@@ -417,6 +417,39 @@ def test_account_stack_lets_only_the_deploy_environments_assume_the_deploy_role(
     return role.urn.apply(check)
 
 
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_account_stack_lets_only_the_deploy_environments_get_pulumi_tokens(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    issuer = runpy.run_path("__main__.py")["pulumi_oidc_issuer"]
+
+    def check(_: object) -> None:
+        inputs = pulumi_mocks.inputs_of("pulumiservice:index:OidcIssuer")
+        assert inputs["url"] == "https://token.actions.githubusercontent.com"
+        assert inputs["organization"] == "ord"
+        assert inputs["policies"] == [
+            {
+                "decision": "allow",
+                "tokenType": "organization",
+                "authorizedPermissions": ["admin"],
+                "rules": {
+                    "aud": "urn:pulumi:org:ord",
+                    "sub": f"repo:open-reaction-database/ord-infrastructure:environment:{environment}",
+                },
+            }
+            for environment in ("prod", "staging")
+        ]
+        # Pulumi Cloud reads *, ?, and . in a rule as wildcards, so these rules match
+        # their claims exactly.
+        for policy in inputs["policies"]:
+            assert not re.search(r"[*?.]", "".join(policy["rules"].values()))
+
+    return issuer.urn.apply(check)
+
+
 def _workflow_environments(path: pathlib.Path) -> set[str]:
     """Returns every deployment environment the jobs of a workflow can run in.
 
@@ -454,3 +487,26 @@ def test_deploy_workflows_run_only_in_environments_the_deploy_role_trusts(
     for workflow in workflows:
         # A job outside them could not assume the role, so its deploy would fail.
         assert _workflow_environments(workflow) <= set(trusted), workflow.name
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_deploy_workflows_request_the_tokens_the_pulumi_issuer_grants(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    organization = runpy.run_path("__main__.py")["PULUMI_ORGANIZATION"]
+    for workflow in sorted(WORKFLOWS.glob("deploy_*.yml")):
+        (job,) = yaml.safe_load(workflow.read_text())["jobs"].values()
+        (step,) = [
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("pulumi/auth-actions@")
+        ]
+        # The organization names the audience of the job's GitHub token, which the
+        # issuer's policies match.
+        assert step["with"] == {
+            "organization": organization,
+            "requested-token-type": "urn:pulumi:token-type:access_token:organization",
+        }, workflow.name

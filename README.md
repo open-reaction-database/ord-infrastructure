@@ -7,7 +7,7 @@ Pulumi stacks that provision the AWS infrastructure for [ord-app](https://github
 ```
 ord-infrastructure/
 ├── stacks/                  # One subdirectory per Pulumi project
-│   ├── account/             # IAM, AWS Identity Center (SSO), account-level S3 BPA
+│   ├── account/             # IAM, AWS Identity Center (SSO), account-level S3 BPA, deploy sign-in
 │   ├── domain/              # Route 53 hosted zone and ACM certificates
 │   ├── backend/             # VPC, RDS Aurora, bastion, logs bucket (see backend/README.md)
 │   ├── database/            # In-DB Postgres roles/grants via the bastion tunnel (see database/README.md)
@@ -75,13 +75,13 @@ Two workflows deploy the web services. Neither runs on its own: start one from t
 | Deploy the editor ([`deploy_editor.yml`](.github/workflows/deploy_editor.yml)) | `stacks/editor`, `prod` or `staging` | `ord_app_ref`, `main` by default; prod accepts only `main` |
 | Deploy the viewer ([`deploy_viewer.yml`](.github/workflows/deploy_viewer.yml)) | `stacks/viewer`, `prod` | `main` |
 
-Each runs `preview` unless you choose `up`, so the routine is the same as from a terminal: run `preview`, read the diff in the run's log, then run `up`. A run checks out ord-app beside this repository, installs the stack's dependencies at the versions in `uv.lock`, builds the image on an arm64 runner, and signs in to AWS as the account stack's deploy role through GitHub's OIDC provider, so no AWS key is stored in GitHub.
+Each runs `preview` unless you choose `up`, so the routine is the same as from a terminal: run `preview`, read the diff in the run's log, then run `up`. A run checks out ord-app beside this repository, installs the stack's dependencies at the versions in `uv.lock`, builds the image on an arm64 runner, and signs in through GitHub's OIDC provider: to AWS as the account stack's deploy role, and to Pulumi Cloud with an `ord` organization token. No AWS key or Pulumi token is stored in GitHub.
 
 One-time setup:
 
-1. `pulumi up` the [`account`](stacks/account/README.md) stack, which creates the deploy role and exports its ARN as `deploy_role_arn`.
+1. `pulumi up` the [`account`](stacks/account/README.md) stack, which creates the deploy role, exports its ARN as `deploy_role_arn`, and registers GitHub as an OIDC issuer in the `ord` Pulumi organization. Registering the issuer takes an organization admin, and the organization tokens it grants need a Pulumi Cloud plan that offers them.
 2. In the repository's settings, under **Secrets and variables → Actions → Variables**, set `AWS_DEPLOY_ROLE_ARN` to that ARN.
-3. Under **Environments**, create `prod` and `staging`. In each, limit **Deployment branches** to `main`, and add a `PULUMI_ACCESS_TOKEN` secret holding a Pulumi access token for the `ord` organization. The deploy role trusts any job in these two environments, so the branch limit is what keeps another branch from deploying. To make each run wait for approval, add required reviewers to the environment.
+3. Under **Environments**, create `prod` and `staging`, and in each, limit **Deployment branches** to `main`. The deploy role and the Pulumi issuer trust any job in these two environments, so the branch limit is what keeps another branch from deploying. To make each run wait for approval, add required reviewers to the environment.
 
 ### Building images from sibling repos
 

@@ -1,6 +1,6 @@
 # account
 
-Pulumi stack for account-scoped resources: IAM, IAM Identity Center (SSO), the cross-account `OrganizationAccountAccessRole`, and account-level S3 controls. Holds the access path you use to manage everything else — accidental deletion would lock you out.
+Pulumi stack for account-scoped resources: IAM, IAM Identity Center (SSO), the cross-account `OrganizationAccountAccessRole`, account-level S3 controls, and the deploy workflows' sign-in to AWS and Pulumi Cloud. Holds the access path you use to manage everything else — accidental deletion would lock you out.
 
 ## What's in here
 
@@ -9,6 +9,7 @@ Pulumi stack for account-scoped resources: IAM, IAM Identity Center (SSO), the c
 - **Billing access** for `bdeadman`: IAM user, group membership in `BillingFullAccessGroup`, and the `IAMUserChangePassword` attachment so the user can rotate their own password.
 - **Account-level S3 Block Public Access** with all four flags `true`, blocking public exposure for every present and future bucket in the account.
 - **GitHub deploy role**: GitHub's OIDC provider and the `ord-infrastructure-deploy` role, which the [deploy workflows](../../README.md#from-github-actions) assume. It trusts only jobs in this repository's `prod` and `staging` environments and has `AdministratorAccess`, since the stacks it deploys create IAM roles and policies. The stack exports its ARN as `deploy_role_arn`. An account holds one provider per URL, so if `token.actions.githubusercontent.com` already has one, import it before the first `up`: `pulumi import aws:iam/openIdConnectProvider:OpenIdConnectProvider github_oidc_provider <provider ARN> --protect`.
+- **Pulumi OIDC issuer**: registers GitHub as an OIDC issuer in the `ord` Pulumi organization, so the same jobs exchange their GitHub tokens for admin organization access tokens instead of reading a stored Pulumi token. Its policies allow the same two environments as the deploy role. The `pulumiservice` provider signs in with your `pulumi login`, which must belong to an organization admin.
 
 ## `PROTECT`
 
