@@ -27,7 +27,7 @@ import pulumi_awsx as awsx
 import pytest
 import yaml
 
-from ord_infrastructure import shared
+from ord_infrastructure import pins, shared
 
 STACKS = pathlib.Path(__file__).parent.parent / "stacks"
 WORKFLOWS = pathlib.Path(__file__).parent.parent / ".github" / "workflows"
@@ -216,6 +216,62 @@ def test_viewer_stack_serves_a_pinned_corpus(pulumi_mocks, services, monkeypatch
 
     ((service, _),) = services
     return service.urn.apply(check)
+
+
+# The deploy workflow's preflight reads the pins from the source, and the service runs
+# with what the program computes, so the two must agree.
+@pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)
+@pulumi.runtime.test
+def test_viewer_pins_are_the_revisions_its_service_runs_with(
+    pulumi_mocks, services, monkeypatch
+):
+    _run_viewer_stack(monkeypatch)
+    read = pins.read_pins(
+        STACKS / "viewer" / "__main__.py", ["ARTIFACTS_REVISION", "SOURCES_REVISION"]
+    )
+
+    def check(_: object) -> None:
+        service = pulumi_mocks.inputs_of("awsx:ecs:FargateService")
+        environment = {
+            variable["name"]: variable["value"]
+            for variable in service["taskDefinitionArgs"]["container"]["environment"]
+        }
+        assert {
+            "ARTIFACTS_REVISION": environment["ORD_VIEWER_ARTIFACTS_REVISION"],
+            "SOURCES_REVISION": environment["ORD_VIEWER_SOURCES_REVISION"],
+        } == read
+
+    ((service, _),) = services
+    return service.urn.apply(check)
+
+
+def test_viewer_deploy_checks_the_pins_before_pulumi_runs():
+    workflow = yaml.safe_load((WORKFLOWS / "deploy_viewer.yml").read_text())
+    (job,) = workflow["jobs"].values()
+    steps = job["steps"]
+    (read,) = [i for i, step in enumerate(steps) if step.get("id") == "pins"]
+    assert steps[read]["working-directory"] == "ord-infrastructure/stacks/viewer"
+    assert "ord_infrastructure.pins __main__.py" in steps[read]["run"]
+    (check,) = [
+        i
+        for i, step in enumerate(steps)
+        if "python -m ord_viewer.preflight" in step.get("run", "")
+    ]
+    assert steps[check]["working-directory"] == "ord-app/backend/viewer"
+    # Under the names the service reads.
+    environment = steps[check]["env"]
+    for name in ("ARTIFACTS_REVISION", "SOURCES_REVISION"):
+        assert name in steps[read]["run"]
+        assert environment[f"ORD_VIEWER_{name}"] == (
+            f"${{{{ steps.pins.outputs.{name} }}}}"
+        )
+    signs_in = [
+        i
+        for i, step in enumerate(steps)
+        if step.get("uses", "").startswith(("aws-actions/", "pulumi/"))
+        or "pulumi" in step.get("run", "")
+    ]
+    assert read < check < min(signs_in)
 
 
 @pytest.mark.parametrize("pulumi_mocks", ["viewer"], indirect=True)

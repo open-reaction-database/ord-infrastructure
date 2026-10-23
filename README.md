@@ -75,7 +75,7 @@ Two workflows deploy the web services. Neither runs on its own: start one from t
 | Deploy the editor ([`deploy_editor.yml`](.github/workflows/deploy_editor.yml)) | `stacks/editor`, `prod` or `staging` | `ord_app_ref`, `main` by default; prod accepts only `main` |
 | Deploy the viewer ([`deploy_viewer.yml`](.github/workflows/deploy_viewer.yml)) | `stacks/viewer`, `prod` | `main` |
 
-Each runs `preview` unless you choose `up`, so the routine is the same as from a terminal: run `preview`, read the diff in the run's log, then run `up`. A run checks out ord-app beside this repository, installs the stack's dependencies at the versions in `uv.lock`, builds the image on an arm64 runner, and signs in through GitHub's OIDC provider: to AWS as the account stack's deploy role, and to Pulumi Cloud with an `ord` organization token. No AWS key or Pulumi token is stored in GitHub.
+Each runs `preview` unless you choose `up`, so the routine is the same as from a terminal: run `preview`, read the diff in the run's log, then run `up`. A run checks out ord-app beside this repository, installs the stack's dependencies at the versions in `uv.lock`, builds the image on an arm64 runner, and signs in through GitHub's OIDC provider: to AWS as the account stack's deploy role, and to Pulumi Cloud with an `ord` organization token. No AWS key or Pulumi token is stored in GitHub. A viewer run also checks, before it signs in, that the viewer can start on the corpus its stack pins (see [`stacks/viewer/README.md`](stacks/viewer/README.md)); an editor run has no such check.
 
 One-time setup:
 

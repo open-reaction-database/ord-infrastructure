@@ -78,6 +78,24 @@ jobs:
           uv venv --seed venv
           uv pip install --python venv/bin/python \
             -r requirements.txt -c "${RUNNER_TEMP}/constraints.txt"
+      # Read from the stack's source, since nothing has run it yet.
+      - name: Read the stack's corpus pins
+        id: pins
+        working-directory: ord-infrastructure/stacks/viewer
+        run: |
+          venv/bin/python -m ord_infrastructure.pins __main__.py \
+            ARTIFACTS_REVISION SOURCES_REVISION >> "${GITHUB_OUTPUT}"
+      # A pinned corpus the new image cannot start on fails here, before anything is
+      # deployed, rather than as tasks that exit while ECS starts more. ord-app's
+      # preflight runs with the ord-schema and RDKit the image installs.
+      - name: Check that the viewer can start on the pinned corpus
+        working-directory: ord-app/backend/viewer
+        env:
+          # setup-uv exports the stack's Python; the viewer's project takes 3.12.
+          UV_PYTHON: '3.12'
+          ORD_VIEWER_ARTIFACTS_REVISION: ${{ steps.pins.outputs.ARTIFACTS_REVISION }}
+          ORD_VIEWER_SOURCES_REVISION: ${{ steps.pins.outputs.SOURCES_REVISION }}
+        run: uv run --frozen --no-dev --no-build python -m ord_viewer.preflight
       - uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
         with:
           pulumi-version: ^3.220.0
