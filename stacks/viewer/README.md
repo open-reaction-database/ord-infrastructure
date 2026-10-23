@@ -46,6 +46,8 @@ pulumi preview --stack ord/prod
 pulumi up      --stack ord/prod
 ```
 
+The **Deploy the viewer** workflow runs the same commands from GitHub Actions; see [Deploying from GitHub Actions](../../README.md#from-github-actions).
+
 `up` waits for the service to reach a steady state, which includes the new task's cold start, for up to the provider's 20-minute default for an ECS service. If a start outlasts that, `up` fails while ECS goes on starting the task; run `up` again once the service is healthy.
 
 ### The apex

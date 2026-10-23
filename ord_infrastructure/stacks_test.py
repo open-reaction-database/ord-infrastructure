@@ -25,10 +25,12 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pytest
+import yaml
 
 from ord_infrastructure import shared
 
 STACKS = pathlib.Path(__file__).parent.parent / "stacks"
+WORKFLOWS = pathlib.Path(__file__).parent.parent / ".github" / "workflows"
 
 # ord-app's image build fails unless every one of these is set
 # (frontend/apps/editor/vite.config.ts in ord-app).
@@ -376,3 +378,79 @@ def test_backend_stack_question_log_expiry_and_trail_agree(pulumi_mocks, monkeyp
         )
 
     return program["question_log_trail"].urn.apply(check)
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_account_stack_lets_only_the_deploy_environments_assume_the_deploy_role(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    role = runpy.run_path("__main__.py")["deploy_role"]
+
+    def check(_: object) -> None:
+        provider = pulumi_mocks.inputs_of(
+            "aws:iam/openIdConnectProvider:OpenIdConnectProvider"
+        )
+        assert provider["url"] == "https://token.actions.githubusercontent.com"
+        (inputs,) = [
+            r.inputs for r in pulumi_mocks.resources if r.name == "deploy_role"
+        ]
+        (statement,) = json.loads(inputs["assumeRolePolicy"])["Statement"]
+        assert statement["Principal"] == {
+            "Federated": "arn:aws:iam::123456789012:oidc-provider/github_oidc_provider"
+        }
+        assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
+        # Exact matches only: a wildcard subject would let another repository, or a job
+        # outside the environments that only main may use, deploy.
+        assert statement["Condition"] == {
+            "StringEquals": {
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                "token.actions.githubusercontent.com:sub": [
+                    "repo:open-reaction-database/ord-infrastructure:environment:prod",
+                    "repo:open-reaction-database/ord-infrastructure:environment:staging",
+                ],
+            }
+        }
+
+    return role.urn.apply(check)
+
+
+def _workflow_environments(path: pathlib.Path) -> set[str]:
+    """Returns every deployment environment the jobs of a workflow can run in.
+
+    Args:
+        path: A workflow whose jobs each name an environment, either literally or as
+            ``${{ inputs.<name> }}`` for a choice input of its ``workflow_dispatch``.
+
+    Returns:
+        The environment names, with each input expanded to its options.
+    """
+    workflow = yaml.safe_load(path.read_text())
+    # YAML 1.1 reads the bare key `on` as True.
+    inputs = workflow[True]["workflow_dispatch"].get("inputs", {})
+    environments = set()
+    for job in workflow["jobs"].values():
+        environment = job["environment"]
+        match = re.fullmatch(r"\$\{\{ inputs\.(\w+) \}\}", environment)
+        environments.update(inputs[match[1]]["options"] if match else [environment])
+    return environments
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_deploy_workflows_run_only_in_environments_the_deploy_role_trusts(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    trusted = runpy.run_path("__main__.py")["DEPLOY_ENVIRONMENTS"]
+    workflows = sorted(WORKFLOWS.glob("deploy_*.yml"))
+    assert [workflow.name for workflow in workflows] == [
+        "deploy_editor.yml",
+        "deploy_viewer.yml",
+    ]
+    for workflow in workflows:
+        # A job outside them could not assume the role, so its deploy would fail.
+        assert _workflow_environments(workflow) <= set(trusted), workflow.name

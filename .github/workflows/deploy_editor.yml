@@ -1,0 +1,109 @@
+# Copyright 2026 Open Reaction Database Project Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Deploy the editor
+
+# Runs only when started from the Actions tab (or `gh workflow run`). "From GitHub
+# Actions", under the README's "Deploying", lists the one-time setup it needs.
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: Stack to deploy
+        type: choice
+        options:
+          - prod
+          - staging
+        default: prod
+      command:
+        description: preview shows what would change; up changes it
+        type: choice
+        options:
+          - preview
+          - up
+        default: preview
+      ord_app_ref:
+        description: ord-app branch, tag, or commit to build (prod builds only main)
+        type: string
+        default: main
+
+permissions:
+  contents: read
+  id-token: write  # Signs in to AWS through GitHub's OIDC provider.
+
+# One run per stack at a time; a second waits rather than failing on Pulumi's stack lock.
+concurrency:
+  group: deploy-editor-${{ inputs.stack }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # The image is built for the platform the service runs on, so nothing is emulated.
+    runs-on: ubuntu-24.04-arm
+    # The deploy role trusts only jobs in this environment, whose settings name the
+    # branches that may deploy and hold the Pulumi token.
+    environment: ${{ inputs.stack }}
+    # Covers the image build and `up`'s wait, bounded by the provider's 20-minute default,
+    # for the service to reach a steady state.
+    timeout-minutes: 45
+    steps:
+      # Neither checkout keeps a token: nothing pushes, and ord-app is public, so the
+      # stack's own `git fetch` of it needs none.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ord-infrastructure
+          persist-credentials: false
+      # The stack builds its image from ord-app checked out beside this repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: open-reaction-database/ord-app
+          ref: ${{ inputs.ord_app_ref }}
+          path: ord-app
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: '3.11'
+      - name: Install the stack's dependencies
+        working-directory: ord-infrastructure
+        # The venv Pulumi.yaml names, with the versions in uv.lock, which CI tests,
+        # rather than the newest that pyproject.toml allows.
+        run: |
+          uv export --locked --no-dev --no-emit-project --no-hashes \
+            --format requirements.txt -o "${RUNNER_TEMP}/constraints.txt"
+          cd stacks/editor
+          uv venv --seed venv
+          uv pip install --python venv/bin/python \
+            -r requirements.txt -c "${RUNNER_TEMP}/constraints.txt"
+      - uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version: ^3.220.0
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: pulumi ${{ inputs.command }}
+        working-directory: ord-infrastructure/stacks/editor
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          STACK: ${{ inputs.stack }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          if [[ ${COMMAND} == up ]]; then
+            pulumi up --stack "ord/${STACK}" --yes
+          else
+            pulumi preview --stack "ord/${STACK}" --diff
+          fi
