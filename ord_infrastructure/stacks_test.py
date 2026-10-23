@@ -25,10 +25,12 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pytest
+import yaml
 
 from ord_infrastructure import shared
 
 STACKS = pathlib.Path(__file__).parent.parent / "stacks"
+WORKFLOWS = pathlib.Path(__file__).parent.parent / ".github" / "workflows"
 
 # ord-app's image build fails unless every one of these is set
 # (frontend/apps/editor/vite.config.ts in ord-app).
@@ -413,3 +415,42 @@ def test_account_stack_lets_only_the_deploy_environments_assume_the_deploy_role(
         }
 
     return role.urn.apply(check)
+
+
+def _workflow_environments(path: pathlib.Path) -> set[str]:
+    """Returns every deployment environment the jobs of a workflow can run in.
+
+    Args:
+        path: A workflow whose jobs each name an environment, either literally or as
+            ``${{ inputs.<name> }}`` for a choice input of its ``workflow_dispatch``.
+
+    Returns:
+        The environment names, with each input expanded to its options.
+    """
+    workflow = yaml.safe_load(path.read_text())
+    # YAML 1.1 reads the bare key `on` as True.
+    inputs = workflow[True]["workflow_dispatch"].get("inputs", {})
+    environments = set()
+    for job in workflow["jobs"].values():
+        environment = job["environment"]
+        match = re.fullmatch(r"\$\{\{ inputs\.(\w+) \}\}", environment)
+        environments.update(inputs[match[1]]["options"] if match else [environment])
+    return environments
+
+
+@pytest.mark.parametrize("pulumi_mocks", ["account"], indirect=True)
+@pulumi.runtime.test
+def test_deploy_workflows_run_only_in_environments_the_deploy_role_trusts(
+    pulumi_mocks, monkeypatch
+):
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / "account")
+    trusted = runpy.run_path("__main__.py")["DEPLOY_ENVIRONMENTS"]
+    workflows = sorted(WORKFLOWS.glob("deploy_*.yml"))
+    assert [workflow.name for workflow in workflows] == [
+        "deploy_editor.yml",
+        "deploy_viewer.yml",
+    ]
+    for workflow in workflows:
+        # A job outside them could not assume the role, so its deploy would fail.
+        assert _workflow_environments(workflow) <= set(trusted), workflow.name

@@ -40,7 +40,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # Signs in to AWS through GitHub's OIDC provider.
+  id-token: write  # Signs in to AWS through GitHub's OIDC provider.
 
 # One run per stack at a time; a second waits rather than failing on Pulumi's stack lock.
 concurrency:
@@ -54,8 +54,8 @@ jobs:
     # The deploy role trusts only jobs in this environment, whose settings name the
     # branches that may deploy and hold the Pulumi token.
     environment: ${{ inputs.stack }}
-    # The image build takes about 5 minutes, and `up` waits up to 20 for the service to
-    # reach a steady state.
+    # Covers the image build and `up`'s wait, bounded by the provider's 20-minute default,
+    # for the service to reach a steady state.
     timeout-minutes: 45
     steps:
       # Neither checkout keeps a token: nothing pushes, and ord-app is public, so the

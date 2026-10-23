@@ -163,13 +163,14 @@ bdeadman_billing_membership = aws.iam.UserGroupMembership(
 )
 
 # The workflows in .github/workflows/deploy_*.yml deploy the web services. They sign in
-# through GitHub's OIDC provider, so no long-lived AWS key exists for them.
+# through GitHub's OIDC provider, which issues each job a token, so they hold no AWS key.
 GITHUB_OIDC_HOST = "token.actions.githubusercontent.com"
-# The deploy role trusts only jobs in these deployment environments of this repository,
-# which the repository's settings let only `main` use.
+# The deployment environments of this repository whose jobs the deploy role trusts. Each
+# environment's settings name the branches whose jobs may run in it.
+DEPLOY_ENVIRONMENTS = ("prod", "staging")
 DEPLOY_SUBJECTS = [
     f"repo:open-reaction-database/ord-infrastructure:environment:{environment}"
-    for environment in ("prod", "staging")
+    for environment in DEPLOY_ENVIRONMENTS
 ]
 
 github_oidc_provider = aws.iam.OpenIdConnectProvider(
@@ -181,6 +182,14 @@ github_oidc_provider = aws.iam.OpenIdConnectProvider(
 
 
 def _deploy_trust_policy(provider_arn: str) -> str:
+    """Returns the deploy role's trust policy, for the jobs in DEPLOY_SUBJECTS.
+
+    Args:
+        provider_arn: ARN of the IAM OIDC provider for GitHub's tokens.
+
+    Returns:
+        The policy document, as JSON.
+    """
     return json.dumps(
         {
             "Version": "2012-10-17",
@@ -208,8 +217,7 @@ deploy_role = aws.iam.Role(
     opts=PROTECT,
 )
 
-# Administrator, because the stacks it deploys create IAM roles and policies, which would
-# let it grant itself anything anyway; the trust policy is what limits who can use it.
+# AdministratorAccess: the stacks it deploys create IAM roles and attach policies to them.
 deploy_role_admin = aws.iam.RolePolicyAttachment(
     "deploy_role_admin",
     role=deploy_role.name,
