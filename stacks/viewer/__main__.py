@@ -29,7 +29,7 @@ from ord_infrastructure.shared import make_web_service
 # artifacts revision must hold a build that ord-app's pinned ord-schema and RDKit read,
 # and the sources revision must mirror the ord-data commit that build names. Changing
 # them is what promotes a new build to serve traffic.
-ARTIFACTS_REVISION = "6662a8bc7c61a01e3b8782cc50cb6d11e217bfa8"
+ARTIFACTS_REVISION = "297f7e559c18c7e37e62d12d4720237847db53ab"
 SOURCES_REVISION = "46980f8cb68aa43ed9707edec319d4eac5a2bfed"
 
 # Under /app, which the image's user owns.
