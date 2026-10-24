@@ -27,6 +27,7 @@ Each project has its own stack (`ord/<project>/prod`) and is deployed independen
 - AWS CLI configured for SSO
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/) for tool-env management
+- Docker, to build the `editor` and `viewer` images, and [`jq`](https://jqlang.org/) to remove their builder afterward (see [Removing the build container](#removing-the-build-container))
 
 ## One-time setup
 
@@ -92,6 +93,17 @@ To bypass the check for a local hotfix:
 ```sh
 PULUMI_ALLOW_DIRTY=1 pulumi up --stack ord/prod
 ```
+
+### Removing the build container
+
+Pulumi's docker-build provider builds the images in a buildx builder, and when no `docker-container` builder is running it creates one with a random name. It never removes that builder ([pulumi/pulumi-docker-build#55](https://github.com/pulumi/pulumi-docker-build/issues/55)), and buildx starts its container again whenever Docker starts, so the container keeps Docker Desktop out of Resource Saver mode. A stopped builder is not reused: the next build creates another, with its own cache volume. After a `preview` or `up` of `editor` or `viewer` from a terminal, remove the builders and their volumes:
+
+```sh
+docker buildx ls --format json | jq -r 'select(.Driver == "docker-container") | .Name' | xargs -r -n1 docker buildx rm
+docker volume ls --quiet --filter name=buildx_buildkit_ | xargs -r docker volume rm
+```
+
+The first line removes every `docker-container` builder, including any you created for other work, and stops any build running in one. The second removes the volumes of builders whose containers were already gone, which `buildx rm` leaves behind. The next build starts with an empty cache. A GitHub Actions runner is discarded after its run, so a workflow deploy leaves nothing to remove.
 
 ## Inspecting state
 
