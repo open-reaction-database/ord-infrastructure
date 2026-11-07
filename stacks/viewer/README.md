@@ -39,6 +39,19 @@ The task names each secret's version, so a new value reaches the service on the 
 pulumi config set --secret <config key> --stack ord/prod
 ```
 
+## Visit counts
+
+The stack saves Logs Insights queries over the container's log, in CloudWatch under **Logs Insights → Saved queries → viewer**, defined in [`ord_infrastructure/log_queries.py`](../../ord_infrastructure/log_queries.py):
+
+| Query | Counts |
+| --- | --- |
+| Visits per day | Full loads of a viewer page by a browser, which happen on arriving or reloading; moving between pages inside the app loads none. |
+| Landing pages | The same loads, by the page loaded. |
+| Traffic sources | The same loads, by the site the browser says it came from. |
+| API calls | Successful calls to the API, by kind and by caller: browser, script, or crawler, as each names itself. |
+
+Each reads nginx's access lines, so it covers the log's 90 days at most. Page loads leave out user agents that name a crawler or a script, and paths that are not the viewer's pages, which scanners try.
+
 ## Deploying
 
 ```sh

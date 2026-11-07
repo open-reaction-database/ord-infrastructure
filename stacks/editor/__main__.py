@@ -25,6 +25,7 @@ import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pulumi_random as random
 
+from ord_infrastructure.log_queries import EDITOR_QUERIES, save_log_queries
 from ord_infrastructure.shared import make_web_service
 
 config = pulumi.Config()
@@ -91,7 +92,7 @@ download_link_secret_version = aws.secretsmanager.SecretVersion(
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
-make_web_service(
+service = make_web_service(
     backend=backend,
     domain=domain,
     container_port=5173,
@@ -134,3 +135,7 @@ make_web_service(
     # The task reads the key at startup, so it must have a value before the service starts.
     depends_on=[download_link_secret_version],
 )
+
+# Counts of visits, new accounts, and API calls, read from the container's log in Logs
+# Insights, saved under the stack's subdomain so staging's stay apart from production's.
+log_queries = save_log_queries(service, subdomain, EDITOR_QUERIES)
