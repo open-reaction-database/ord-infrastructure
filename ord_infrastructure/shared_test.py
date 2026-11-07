@@ -106,6 +106,14 @@ def test_assert_sibling_clean_rejects_untracked_files(sibling):
         assert_sibling_clean(str(sibling))
 
 
+def test_assert_sibling_clean_rejects_untracked_files_git_is_set_to_hide(sibling):
+    _git(sibling, "config", "status.showUntrackedFiles", "no")
+    (sibling / "scratch.txt").write_text("untracked\n")
+    with pytest.raises(SystemExit, match="untracked files"):
+        assert_sibling_clean(str(sibling))
+    assert sibling_head(str(sibling)).endswith("-dirty")
+
+
 def test_assert_sibling_clean_accepts_ignored_files(sibling):
     (sibling / ".gitignore").write_text("scratch.txt\n")
     _git(sibling, "add", ".gitignore")

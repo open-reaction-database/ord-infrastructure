@@ -37,17 +37,20 @@ def _has_changes(path: str) -> bool:
     """Returns whether a repo has uncommitted changes or untracked files.
 
     Untracked files count because the Dockerfile may COPY one into the image; ignored
-    files don't. A failed `git status` counts too, since it can't confirm the tree is
-    clean.
+    files don't. `--untracked-files=normal` lists them even where the repo's or user's
+    `status.showUntrackedFiles` hides them. A failed `git status` counts too, since it
+    can't confirm the tree is clean.
 
     Args:
         path: Path to the repo.
 
     Returns:
-        True unless `git status --porcelain` succeeds and lists nothing.
+        True unless `git status` succeeds and lists nothing.
     """
     status = subprocess.run(
-        ["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True
+        ["git", "-C", path, "status", "--porcelain", "--untracked-files=normal"],
+        capture_output=True,
+        text=True,
     )
     return status.returncode != 0 or bool(status.stdout.strip())
 
