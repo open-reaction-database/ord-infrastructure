@@ -89,17 +89,19 @@ VIEWER_QUERIES = {
 }
 
 
-def editor_queries(health_check_path: str) -> dict[str, str]:
+def editor_queries(*health_check_paths: str) -> dict[str, str]:
     """Returns the editor's queries, which leave out the load balancer's health checks.
 
     Args:
-        health_check_path: The path, with its query string, that the load balancer's
-            health checks request.
+        *health_check_paths: Each path, with its query string, whose requests in the
+            log are the load balancer's health checks.
 
     Returns:
         Each query, by its title.
     """
-    health_check = json.dumps(health_check_path)
+    not_health_checks = "".join(
+        f" and concat(path, query) != {json.dumps(path)}" for path in health_check_paths
+    )
     return {
         "Visits and new accounts per day": """filter @message like /"POST \\/api\\/v1\\/auth\\/jit-provisioning HTTP\\/[0-9.]+" 2\\d\\d/
   or @message like /New <User\\(id=/
@@ -108,7 +110,7 @@ def editor_queries(health_check_path: str) -> dict[str, str]:
     by bin(1d) as day
 | sort day desc""",
         "API calls": f"""parse @message /{EDITOR_REQUEST}/
-| filter ispresent(method) and concat(path, query) != {health_check}
+| filter ispresent(method){not_health_checks}
 | parse path /{EDITOR_ROUTE}/
 | stats count() as calls
     by method,

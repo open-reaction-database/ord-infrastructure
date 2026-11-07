@@ -139,9 +139,12 @@ def test_editor_request_keeps_the_query_string_apart():
     assert match["path"] == "/api/v1/canonicalize-smiles"
 
 
-def test_editor_api_calls_leave_out_the_health_check():
-    query = log_queries.editor_queries("/api/v1/x?y=1")["API calls"]
-    assert 'concat(path, query) != "/api/v1/x?y=1"' in query
+def test_editor_api_calls_leave_out_each_health_check_path():
+    query = log_queries.editor_queries("/api/v1/x?y=1", "/api/v1/z")["API calls"]
+    assert (
+        '| filter ispresent(method) and concat(path, query) != "/api/v1/x?y=1"'
+        ' and concat(path, query) != "/api/v1/z"\n'
+    ) in query
 
 
 @pytest.mark.parametrize(
