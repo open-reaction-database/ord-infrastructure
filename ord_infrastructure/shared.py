@@ -194,13 +194,17 @@ def make_web_service(
     depends_on: Sequence[pulumi.Resource] | None = None,
     health_check_grace_period_seconds: int | None = None,
     ephemeral_storage_gib: int | None = None,
+    redirect_host: pulumi.Input[str] | None = None,
+    redirect_listener_rule_priority: int | None = None,
 ) -> awsx.ecs.FargateService:
     """Provision a public-facing ECS Fargate web service behind the shared ALB.
 
     Builds the full stack shared by the `editor` and `viewer` projects: a target group
     and a host-header rule on the backend's shared HTTPS listener, a Route 53 alias to
     that load balancer, an ECR image built from a sibling repo (gated by
-    `assert_sibling_clean`), and a Fargate service wired to the backend VPC.
+    `assert_sibling_clean`), and a Fargate service wired to the backend VPC. With a
+    `redirect_host`, it adds a second rule and alias that redirect that host to the
+    service's own.
 
     Resource names are fixed (e.g. "service", "listener_rule"), so call this at most
     once per Pulumi project; the URNs stay stable across callers because each runs in
@@ -246,9 +250,10 @@ def make_web_service(
         cpu: Fargate task CPU units (default 1024 = 1 vCPU). Must form a valid
             Fargate CPU/memory combination.
         memory: Fargate task memory in MiB (default 2048 = 2 GB).
-        cluster_name: Explicit ECS cluster name (e.g. "app", "app-staging",
+        cluster_name: Explicit ECS cluster name (e.g. "editor", "editor-staging",
             "viewer") so clusters are distinguishable in the console. None
-            auto-generates a "cluster-*" name. Changing it replaces the cluster.
+            auto-generates a "cluster-*" name. Changing it replaces the cluster and
+            the service in it.
         depends_on: Resources the service must be created after — e.g. a
             SecretVersion that must hold a value before a task resolves its secrets.
         health_check_grace_period_seconds: Seconds after a task starts during which
@@ -257,17 +262,35 @@ def make_web_service(
         ephemeral_storage_gib: The task's ephemeral storage in GiB, shared by the
             image's layers and whatever the task writes; Fargate allows 21 to 200.
             None leaves Fargate's default of 20 GiB.
+        redirect_host: A host whose requests the load balancer answers with a
+            permanent redirect to the same path and query on ``record_name``. Its
+            certificate must be on the shared listener. None redirects no host.
+        redirect_listener_rule_priority: The redirect rule's priority on the shared
+            HTTPS listener: unique across every service using it, and below
+            ``listener_rule_priority``, so the listener evaluates it first. Required
+            with ``redirect_host``.
 
     Returns:
         The created FargateService.
 
     Raises:
         ValueError: If ``name_prefix`` is too long; AWS caps target-group names at 32
-            chars, and the derived name is ``f"{name_prefix}-tg"``.
+            chars, and the derived name is ``f"{name_prefix}-tg"``. Also if
+            ``redirect_host`` comes without a ``redirect_listener_rule_priority``
+            below ``listener_rule_priority``.
     """
     if name_prefix is not None and len(name_prefix) > 29:
         raise ValueError(
             f"name_prefix {name_prefix!r} is too long (max 29 chars; the target group appends '-tg')"
+        )
+    if redirect_host is not None and (
+        redirect_listener_rule_priority is None
+        or redirect_listener_rule_priority >= listener_rule_priority
+    ):
+        raise ValueError(
+            f"redirect_host needs a redirect_listener_rule_priority below "
+            f"listener_rule_priority ({listener_rule_priority}), "
+            f"not {redirect_listener_rule_priority}"
         )
     # Hyphenated: without name_prefix, the group's AWS name is generated from this
     # resource name, and target group names cannot contain underscores.
@@ -282,17 +305,14 @@ def make_web_service(
             path=health_check_path, matcher="200"
         ),
     )
+    # The rule also forwards the redirect host, so that host is served until the
+    # redirect rule, which the listener evaluates first, exists.
+    hosts = [record_name] if redirect_host is None else [record_name, redirect_host]
     listener_rule = aws.lb.ListenerRule(
         "listener_rule",
         listener_arn=backend.get_output("https_listener_arn"),
         priority=listener_rule_priority,
-        conditions=[
-            aws.lb.ListenerRuleConditionArgs(
-                host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(
-                    values=[record_name]
-                )
-            )
-        ],
+        conditions=[_host_condition(hosts)],
         actions=[
             aws.lb.ListenerRuleActionArgs(
                 type="forward", target_group_arn=target_group.arn
@@ -436,8 +456,61 @@ def make_web_service(
 
     # After the service, so the name moves to the load balancer only once the service
     # is registered behind it.
-    aws.route53.Record(
-        "alias",
+    alias = _load_balancer_alias("alias", record_name, backend, domain, service)
+    if redirect_host is not None:
+        # After the alias, so a redirected request finds its host.
+        redirect_rule = aws.lb.ListenerRule(
+            "redirect_listener_rule",
+            listener_arn=backend.get_output("https_listener_arn"),
+            priority=redirect_listener_rule_priority,
+            conditions=[_host_condition([redirect_host])],
+            actions=[
+                aws.lb.ListenerRuleActionArgs(
+                    type="redirect",
+                    # The path, query, port, and protocol default to the request's.
+                    redirect=aws.lb.ListenerRuleActionRedirectArgs(
+                        host=record_name, status_code="HTTP_301"
+                    ),
+                )
+            ],
+            opts=pulumi.ResourceOptions(depends_on=[alias]),
+        )
+        _load_balancer_alias(
+            "redirect_alias", redirect_host, backend, domain, redirect_rule
+        )
+    return service
+
+
+def _host_condition(
+    hosts: Sequence[pulumi.Input[str]],
+) -> aws.lb.ListenerRuleConditionArgs:
+    """Return a listener rule condition that matches any of `hosts`."""
+    return aws.lb.ListenerRuleConditionArgs(
+        host_header=aws.lb.ListenerRuleConditionHostHeaderArgs(values=hosts)
+    )
+
+
+def _load_balancer_alias(
+    name: str,
+    host: pulumi.Input[str],
+    backend: pulumi.StackReference,
+    domain: pulumi.StackReference,
+    after: pulumi.Resource,
+) -> aws.route53.Record:
+    """Point `host` at the shared load balancer with a Route 53 alias record.
+
+    Args:
+        name: The record's Pulumi resource name.
+        host: The fully-resolved DNS name.
+        backend: StackReference to `ord/backend/prod`, which owns the load balancer.
+        domain: StackReference to `ord/domain/prod`, which owns the hosted zone.
+        after: A resource the record must be created after.
+
+    Returns:
+        The created record.
+    """
+    return aws.route53.Record(
+        name,
         aliases=[
             aws.route53.RecordAliasArgs(
                 evaluate_target_health=False,
@@ -445,9 +518,8 @@ def make_web_service(
                 zone_id=backend.get_output("load_balancer_zone_id"),
             )
         ],
-        name=record_name,
+        name=host,
         type=aws.route53.RecordType.A,
         zone_id=domain.get_output("zone_id"),
-        opts=pulumi.ResourceOptions(depends_on=[service]),
+        opts=pulumi.ResourceOptions(depends_on=[after]),
     )
-    return service

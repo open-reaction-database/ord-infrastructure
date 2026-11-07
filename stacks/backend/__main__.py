@@ -97,7 +97,7 @@ https_listener = aws.lb.Listener(
     ],
 )
 # The apex certificate is the listener's default; SNI picks the wildcard for
-# subdomains such as app.
+# subdomains such as editor.
 aws.lb.ListenerCertificate(
     "wildcard_listener_certificate",
     listener_arn=https_listener.arn,
