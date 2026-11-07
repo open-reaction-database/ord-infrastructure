@@ -86,7 +86,7 @@ One-time setup:
 
 ### Building images from sibling repos
 
-`stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling is on `main` and up to date with `origin/main` — `pulumi up` will fail loudly if it isn't.
+`stacks/editor` and `stacks/viewer` build their docker images from the sibling checkout `../ord-app`, next to this repository. Before the build, [`assert_sibling_clean`](ord_infrastructure/shared.py) checks that the sibling has no uncommitted changes or untracked files, is on `main`, and is up to date with `origin/main` — `pulumi up` will fail loudly if it isn't. An image built from a tree that passes is labeled with its bare commit; one built from a dirty tree, on staging or with `PULUMI_ALLOW_DIRTY`, is labeled `<commit>-dirty`.
 
 To bypass the check for a local hotfix:
 

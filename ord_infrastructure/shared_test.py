@@ -100,13 +100,35 @@ def test_assert_sibling_clean_rejects_uncommitted_changes(sibling):
         assert_sibling_clean(str(sibling))
 
 
-def test_assert_sibling_clean_ignores_untracked_files(sibling):
-    # `git diff --quiet HEAD` does not see untracked files, so a new-but-unadded
-    # file does not block a deploy. sibling_head deliberately differs (see
-    # test_sibling_head_counts_untracked_file_as_dirty), because such a file can
-    # still be COPYed into the image.
+def test_assert_sibling_clean_rejects_untracked_files(sibling):
     (sibling / "scratch.txt").write_text("untracked\n")
+    with pytest.raises(SystemExit, match="untracked files"):
+        assert_sibling_clean(str(sibling))
+
+
+def test_assert_sibling_clean_rejects_untracked_files_git_is_set_to_hide(sibling):
+    _git(sibling, "config", "status.showUntrackedFiles", "no")
+    (sibling / "scratch.txt").write_text("untracked\n")
+    with pytest.raises(SystemExit, match="untracked files"):
+        assert_sibling_clean(str(sibling))
+    assert sibling_head(str(sibling)).endswith("-dirty")
+
+
+def test_assert_sibling_clean_accepts_ignored_files(sibling):
+    (sibling / ".gitignore").write_text("scratch.txt\n")
+    _git(sibling, "add", ".gitignore")
+    _git(sibling, "commit", "--quiet", "-m", "ignore scratch")
+    _git(sibling, "push", "--quiet", "origin", "main")
+    (sibling / "scratch.txt").write_text("ignored\n")
     assert_sibling_clean(str(sibling))
+    assert sibling_head(str(sibling)) == _git(sibling, "rev-parse", "HEAD")
+
+
+def test_assert_sibling_clean_rejects_a_tree_git_cannot_read(tmp_path):
+    not_a_repo = tmp_path / "not-a-repo"
+    not_a_repo.mkdir()
+    with pytest.raises(SystemExit, match="uncommitted changes or untracked files"):
+        assert_sibling_clean(str(not_a_repo))
 
 
 def test_assert_sibling_clean_rejects_wrong_branch(sibling):
