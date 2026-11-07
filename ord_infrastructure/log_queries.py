@@ -46,7 +46,10 @@ SCRIPT = (
 )
 
 # A request line in uvicorn's access log, behind the editor's nginx.
-EDITOR_REQUEST = r'^INFO:\s+\S+ - "(?<method>[A-Z]+) (?<path>[^ ?]*)\S* HTTP\/[0-9.]+" (?<status>\d{3})'
+EDITOR_REQUEST = (
+    r'^INFO:\s+\S+ - "(?<method>[A-Z]+) (?<path>[^ ?]*)(?<query>\S*) HTTP\/[0-9.]+" '
+    r"(?<status>\d{3})"
+)
 
 # The route an editor API path follows, without its IDs: the segments with no digit.
 EDITOR_ROUTE = (
@@ -85,15 +88,27 @@ VIEWER_QUERIES = {
 | sort calls desc""",
 }
 
-EDITOR_QUERIES = {
-    "Visits and new accounts per day": """filter @message like /"POST \\/api\\/v1\\/auth\\/jit-provisioning HTTP\\/[0-9.]+" 2\\d\\d/
+
+def editor_queries(health_check_path: str) -> dict[str, str]:
+    """Returns the editor's queries, which leave out the load balancer's health checks.
+
+    Args:
+        health_check_path: The path, with its query string, that the load balancer's
+            health checks request.
+
+    Returns:
+        Each query, by its title.
+    """
+    health_check = json.dumps(health_check_path)
+    return {
+        "Visits and new accounts per day": """filter @message like /"POST \\/api\\/v1\\/auth\\/jit-provisioning HTTP\\/[0-9.]+" 2\\d\\d/
   or @message like /New <User\\(id=/
 | stats sum(@message like /jit-provisioning/) as visits,
     sum(@message like /New <User/) as new_accounts
     by bin(1d) as day
 | sort day desc""",
-    "API calls": f"""parse @message /{EDITOR_REQUEST}/
-| filter ispresent(method)
+        "API calls": f"""parse @message /{EDITOR_REQUEST}/
+| filter ispresent(method) and concat(path, query) != {health_check}
 | parse path /{EDITOR_ROUTE}/
 | stats count() as calls
     by method,
@@ -101,7 +116,7 @@ EDITOR_QUERIES = {
         as route,
       status like /^2/ as succeeded
 | sort calls desc""",
-}
+    }
 
 
 def awslogs_group(container_definitions: str) -> str:

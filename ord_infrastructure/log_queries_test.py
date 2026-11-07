@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the saved Logs Insights queries' patterns, against lines in the logs' formats."""
+"""Tests for the saved Logs Insights queries: their patterns, and the log group they read."""
 
 import json
 import re
+import types
 
+import pulumi
+import pulumi_aws as aws
 import pytest
 
 from ord_infrastructure import log_queries
@@ -122,8 +125,23 @@ def test_editor_request_reads_a_uvicorn_line():
     assert match.groupdict() == {
         "method": "POST",
         "path": "/api/v1/auth/jit-provisioning",
+        "query": "",
         "status": "201",
     }
+
+
+def test_editor_request_keeps_the_query_string_apart():
+    # The load balancer's health check, which the API calls query leaves out.
+    line = 'INFO:     10.0.97.138:0 - "GET /api/v1/canonicalize-smiles?smiles=C HTTP/1.0" 200 OK'
+    match = pattern(log_queries.EDITOR_REQUEST).match(line)
+    assert match is not None
+    assert match["path"] + match["query"] == "/api/v1/canonicalize-smiles?smiles=C"
+    assert match["path"] == "/api/v1/canonicalize-smiles"
+
+
+def test_editor_api_calls_leave_out_the_health_check():
+    query = log_queries.editor_queries("/api/v1/x?y=1")["API calls"]
+    assert 'concat(path, query) != "/api/v1/x?y=1"' in query
 
 
 @pytest.mark.parametrize(
@@ -162,3 +180,40 @@ def test_awslogs_group_reads_the_first_containers_log_group():
         ]
     )
     assert log_queries.awslogs_group(definitions) == "service-0123abc"
+
+
+@pulumi.runtime.test
+def test_save_log_queries_reads_the_services_log_group(pulumi_mocks):
+    definition = aws.ecs.TaskDefinition(
+        "definition",
+        family="service",
+        container_definitions=json.dumps(
+            [
+                {
+                    "name": "container",
+                    "logConfiguration": {
+                        "logDriver": "awslogs",
+                        "options": {"awslogs-group": "service-0123abc"},
+                    },
+                }
+            ]
+        ),
+    )
+    # A stand-in for the FargateService, which exposes its task definition as an output.
+    service = types.SimpleNamespace(
+        task_definition=pulumi.Output.from_input(definition)
+    )
+    saved = log_queries.save_log_queries(
+        service,  # ty: ignore[invalid-argument-type]
+        "folder",
+        {"Page loads": "fields @message"},
+    )
+
+    def check(_: object) -> None:
+        inputs = pulumi_mocks.inputs_of(
+            "aws:cloudwatch/queryDefinition:QueryDefinition"
+        )
+        assert inputs["name"] == "folder/Page loads"
+        assert inputs["logGroupNames"] == ["service-0123abc"]
+
+    return pulumi.Output.all(*(query.urn for query in saved)).apply(check)  # ty: ignore[missing-argument, invalid-argument-type]

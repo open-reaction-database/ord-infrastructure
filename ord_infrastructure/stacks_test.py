@@ -168,22 +168,28 @@ def test_service_stacks_keep_container_logs_for_90_days(
 
 
 @pytest.mark.parametrize(
-    ("pulumi_mocks", "folder", "queries"),
+    ("pulumi_mocks", "folder", "queries_of"),
     [
-        ("editor", "editor", log_queries.EDITOR_QUERIES),
-        ("viewer", "viewer", log_queries.VIEWER_QUERIES),
+        (
+            "editor",
+            "editor",
+            lambda program: log_queries.editor_queries(program["HEALTH_CHECK_PATH"]),
+        ),
+        ("viewer", "viewer", lambda _: log_queries.VIEWER_QUERIES),
     ],
     indirect=["pulumi_mocks"],
 )
 @pulumi.runtime.test
 def test_service_stacks_save_their_log_queries(
-    pulumi_mocks, monkeypatch, folder, queries
+    pulumi_mocks, monkeypatch, folder, queries_of
 ):
     # The clean-main gate would inspect the developer's ord-app checkout.
     monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
     pulumi.runtime.set_all_config({})
     monkeypatch.chdir(STACKS / pulumi.get_project())
-    saved = runpy.run_path("__main__.py")["log_queries"]
+    program = runpy.run_path("__main__.py")
+    saved = program["log_queries"]
+    queries = queries_of(program)
 
     def check(_: object) -> None:
         inputs = [

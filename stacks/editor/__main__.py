@@ -25,7 +25,7 @@ import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pulumi_random as random
 
-from ord_infrastructure.log_queries import EDITOR_QUERIES, save_log_queries
+from ord_infrastructure.log_queries import editor_queries, save_log_queries
 from ord_infrastructure.shared import make_web_service
 
 config = pulumi.Config()
@@ -92,14 +92,16 @@ download_link_secret_version = aws.secretsmanager.SecretVersion(
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
 
+# Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
+HEALTH_CHECK_PATH = "/api/v1/canonicalize-smiles?smiles=C"
+
 service = make_web_service(
     backend=backend,
     domain=domain,
     container_port=5173,
     record_name=record_name,
     listener_rule_priority=listener_rule_priority,
-    # Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
-    health_check_path="/api/v1/canonicalize-smiles?smiles=C",
+    health_check_path=HEALTH_CHECK_PATH,
     sibling_path="../../../ord-app",
     dockerfile="../../../ord-app/deploy/editor/Dockerfile",
     secret_arns=[
@@ -140,5 +142,7 @@ service = make_web_service(
 # Insights. Saved under editor/ for prod, and apart from it for any other stack.
 stack = pulumi.get_stack()
 log_queries = save_log_queries(
-    service, "editor" if stack == "prod" else f"editor-{stack}", EDITOR_QUERIES
+    service,
+    "editor" if stack == "prod" else f"editor-{stack}",
+    editor_queries(HEALTH_CHECK_PATH),
 )
