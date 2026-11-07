@@ -33,18 +33,46 @@ IMAGE_PLATFORM = "linux/arm64"
 CPU_ARCHITECTURE = "ARM64"
 
 
-def assert_sibling_clean(path: str, branch: str = "main") -> None:
-    """Fail fast if a sibling repo isn't on `branch` and up to date with origin.
+def _has_changes(path: str) -> bool:
+    """Returns whether a repo has uncommitted changes or untracked files.
 
-    Used before docker-image builds to keep production deploys honest about
-    which commit shipped. Set PULUMI_ALLOW_DIRTY=1 to override when you need
-    to deploy a local hotfix.
+    Untracked files count because the Dockerfile may COPY one into the image; ignored
+    files don't. A failed `git status` counts too, since it can't confirm the tree is
+    clean.
+
+    Args:
+        path: Path to the repo.
+
+    Returns:
+        True unless `git status --porcelain` succeeds and lists nothing.
+    """
+    status = subprocess.run(
+        ["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True
+    )
+    return status.returncode != 0 or bool(status.stdout.strip())
+
+
+def assert_sibling_clean(path: str, branch: str = "main") -> None:
+    """Fail fast unless a sibling repo is clean, on `branch`, and in sync with origin.
+
+    Used before docker-image builds to keep production deploys honest about which
+    commit shipped. Clean is the test :func:`sibling_head` applies, so an image built
+    after this passes is labeled with the bare commit. Set PULUMI_ALLOW_DIRTY=1 to
+    override when you need to deploy a local hotfix.
+
+    Args:
+        path: Path to the sibling repo.
+        branch: The branch the repo must be on and match on origin.
+
+    Raises:
+        SystemExit: If the repo has uncommitted changes or untracked files, is on
+            another branch, can't fetch `branch` from origin, or differs from it.
     """
     if os.environ.get("PULUMI_ALLOW_DIRTY"):
         return
-    if subprocess.run(["git", "-C", path, "diff", "--quiet", "HEAD"]).returncode != 0:
+    if _has_changes(path):
         sys.exit(
-            f"ERROR: {path} has uncommitted changes; set PULUMI_ALLOW_DIRTY=1 to override"
+            f"ERROR: {path} has uncommitted changes or untracked files; set PULUMI_ALLOW_DIRTY=1 to override"
         )
     actual_branch = subprocess.run(
         ["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"],
@@ -89,8 +117,9 @@ def sibling_head(path: str) -> str:
     Passed to the docker build as the ``GIT_COMMIT`` build arg, which the Dockerfile
     records as the ``org.opencontainers.image.revision`` label — so the deployed image
     says exactly which commit produced it instead of leaving it to be inferred from
-    build timestamps. Appends ``-dirty`` when the tree has uncommitted changes; prod is
-    gated clean by :func:`assert_sibling_clean`, but staging may build a dirty branch.
+    build timestamps. Appends ``-dirty`` when the tree has uncommitted changes or
+    untracked files; prod is gated clean by :func:`assert_sibling_clean`, but staging
+    may build a dirty branch.
 
     Args:
         path: Path to the sibling repo.
@@ -105,14 +134,7 @@ def sibling_head(path: str) -> str:
     if head.returncode != 0:
         return "unknown"
     sha = head.stdout.strip()
-    # `git status --porcelain` (not `diff --quiet HEAD`) so untracked files count as dirty
-    # too — the Dockerfile may COPY a new-but-uncommitted file into the image. If status
-    # itself fails we can't confirm clean, so assume dirty rather than mislabel a release.
-    status = subprocess.run(
-        ["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True
-    )
-    dirty = status.returncode != 0 or bool(status.stdout.strip())
-    return f"{sha}-dirty" if dirty else sha
+    return f"{sha}-dirty" if _has_changes(path) else sha
 
 
 def make_ecs_execution_role(
