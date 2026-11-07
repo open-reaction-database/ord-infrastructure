@@ -145,6 +145,100 @@ def test_editor_stack_gives_the_task_a_download_link_key(
     return service.urn.apply(check)
 
 
+def _editor_load_balancer_inputs(
+    pulumi_mocks, monkeypatch, constructed, config: dict[str, str]
+) -> tuple[pulumi.Output, dict[str, dict]]:
+    """Run the editor's stack program and collect what it gives the load balancer.
+
+    Args:
+        pulumi_mocks: The recording mocks, which hold each resource's inputs.
+        monkeypatch: The test's monkeypatch fixture, for the working directory.
+        constructed: The fixture that records the rules and records as they are made.
+        config: The stack's config, as fully-qualified keys and string values.
+
+    Returns:
+        An output that resolves once every rule and record has registered, and a
+        mapping, filled by then, from the name of each cluster, target group, rule,
+        and record to its inputs.
+    """
+    rules = constructed(aws.lb, "ListenerRule")
+    records = constructed(aws.route53, "Record")
+    pulumi.runtime.set_all_config(config)
+    monkeypatch.chdir(STACKS / "editor")
+    runpy.run_path("__main__.py")
+    inputs: dict[str, dict] = {}
+
+    def collect(_: object) -> None:
+        kinds = (
+            "aws:ecs/cluster:Cluster",
+            "aws:lb/targetGroup:TargetGroup",
+            "aws:lb/listenerRule:ListenerRule",
+            "aws:route53/record:Record",
+        )
+        inputs.update(
+            (resource.name, resource.inputs)
+            for resource in pulumi_mocks.resources
+            if resource.typ in kinds
+        )
+
+    registered = pulumi.Output.all(
+        *(resource.urn for resource, _ in rules + records)
+    ).apply(collect)  # ty: ignore[missing-argument, invalid-argument-type]
+    return registered, inputs
+
+
+@pulumi.runtime.test
+def test_editor_stack_serves_editor_and_redirects_app(
+    pulumi_mocks, monkeypatch, constructed
+):
+    registered, inputs = _editor_load_balancer_inputs(
+        pulumi_mocks, monkeypatch, constructed, {"editor:enforce_clean": "false"}
+    )
+
+    def check(_: object) -> None:
+        assert inputs["cluster"]["name"] == "editor"
+        # Prod's target group keeps its generated name.
+        assert "name" not in inputs["listener-target-group"]
+        assert inputs["alias"]["name"] == "editor.example.com"
+        (condition,) = inputs["listener_rule"]["conditions"]
+        assert condition["hostHeader"]["values"] == [
+            "editor.example.com",
+            "app.example.com",
+        ]
+        redirect = inputs["redirect_listener_rule"]
+        (condition,) = redirect["conditions"]
+        assert condition["hostHeader"]["values"] == ["app.example.com"]
+        (action,) = redirect["actions"]
+        assert action["redirect"]["host"] == "editor.example.com"
+        assert inputs["redirect_alias"]["name"] == "app.example.com"
+
+    return registered.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+@pulumi.runtime.test
+def test_editor_staging_stack_serves_editor_staging_without_a_redirect(
+    pulumi_mocks, monkeypatch, constructed
+):
+    staging = yaml.safe_load((STACKS / "editor" / "Pulumi.staging.yaml").read_text())
+    registered, inputs = _editor_load_balancer_inputs(
+        pulumi_mocks,
+        monkeypatch,
+        constructed,
+        {key: str(value) for key, value in staging["config"].items()},
+    )
+
+    def check(_: object) -> None:
+        assert inputs["cluster"]["name"] == "editor-staging"
+        assert inputs["listener-target-group"]["name"] == "editor-staging-tg"
+        assert inputs["alias"]["name"] == "editor-staging.example.com"
+        (condition,) = inputs["listener_rule"]["conditions"]
+        assert condition["hostHeader"]["values"] == ["editor-staging.example.com"]
+        assert "redirect_listener_rule" not in inputs
+        assert "redirect_alias" not in inputs
+
+    return registered.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
 @pytest.mark.parametrize("pulumi_mocks", ["editor", "viewer"], indirect=True)
 @pulumi.runtime.test
 def test_service_stacks_keep_container_logs_for_90_days(

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: editor
-description: ECS Fargate service, ALB, and DNS for ord-app's editor (served at app.open-reaction-database.org).
+description: ECS Fargate service, ALB, and DNS for ord-app's editor (served at editor.open-reaction-database.org).
 runtime:
   name: python
   options:

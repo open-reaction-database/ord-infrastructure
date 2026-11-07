@@ -66,8 +66,13 @@ config to its credentials, then run the imports above.
 ## Callback / logout URLs
 
 `callbacks` and `allowed_logout_urls` list every environment origin allowed to
-complete the login flow (`https://app.open-reaction-database.org` for prod,
-`https://app-staging.open-reaction-database.org` for staging). The app derives its
+complete the login flow (`https://editor.open-reaction-database.org` for prod,
+`https://editor-staging.open-reaction-database.org` for staging). The app derives its
 `redirect_uri` from the browser origin, so a new environment must be added here
 before its logins will work. Leaving a staging URL listed while staging is torn
 down is harmless.
+
+Both lists also hold the `app.open-reaction-database.org` and
+`app-staging.open-reaction-database.org` origins. The editor stack serves the first
+until its redirect to prod's host is in place, and a sign-in or sign-out started there
+before then returns to that origin. Nothing serves the second.
