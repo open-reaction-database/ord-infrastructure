@@ -32,9 +32,9 @@ import pulumi_auth0 as auth0
 # staging stack is torn down — an unused allowed callback is harmless.
 PROD = "https://editor.open-reaction-database.org"
 STAGING = "https://editor-staging.open-reaction-database.org"
-# The app.<domain> hosts, which the editor stack redirects to PROD (app) or does not
-# serve (app-staging). A page already loaded from one still signs in and out with its
-# own origin, so they stay listed.
+# The app.<domain> hosts. The editor stack serves app.<domain> until its redirect to
+# PROD is in place, and a sign-in or sign-out started there before then returns to
+# that origin. Nothing serves app-staging.<domain>.
 APP_HOSTS = [
     "https://app.open-reaction-database.org",
     "https://app-staging.open-reaction-database.org",

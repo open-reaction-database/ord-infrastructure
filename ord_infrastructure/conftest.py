@@ -102,7 +102,7 @@ class RecordingMocks(pulumi.runtime.Mocks):
 
 @pytest.fixture
 def constructed(monkeypatch) -> Callable[[object, str], list[tuple[object, dict]]]:
-    """Returns a function that records each resource a class constructs from then on.
+    """Returns a function that records each resource of a class made from then on.
 
     The function takes a module and the name of a resource class in it, and returns a
     list that fills with each resource of that class and the keyword arguments it was

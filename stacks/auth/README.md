@@ -73,6 +73,6 @@ before its logins will work. Leaving a staging URL listed while staging is torn
 down is harmless.
 
 Both lists also hold the `app.open-reaction-database.org` and
-`app-staging.open-reaction-database.org` origins. The editor stack redirects the first
-to prod's host and serves neither, but a page already loaded from one signs in and out
-with its own origin.
+`app-staging.open-reaction-database.org` origins. The editor stack serves the first
+until its redirect to prod's host is in place, and a sign-in or sign-out started there
+before then returns to that origin. Nothing serves the second.
