@@ -71,8 +71,3 @@ complete the login flow (`https://editor.open-reaction-database.org` for prod,
 `redirect_uri` from the browser origin, so a new environment must be added here
 before its logins will work. Leaving a staging URL listed while staging is torn
 down is harmless.
-
-Both lists also hold the `app.open-reaction-database.org` and
-`app-staging.open-reaction-database.org` origins. The editor stack serves the first
-until its redirect to prod's host is in place, and a sign-in or sign-out started there
-before then returns to that origin. Nothing serves the second.
