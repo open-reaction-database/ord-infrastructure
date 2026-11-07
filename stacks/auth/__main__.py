@@ -30,8 +30,15 @@ import pulumi_auth0 as auth0
 # redirect_uri from the browser origin (globalThis.location.origin), so every
 # environment's origin must be listed here. Staging URLs stay listed even when the
 # staging stack is torn down — an unused allowed callback is harmless.
-PROD = "https://app.open-reaction-database.org"
-STAGING = "https://app-staging.open-reaction-database.org"
+PROD = "https://editor.open-reaction-database.org"
+STAGING = "https://editor-staging.open-reaction-database.org"
+# The app.<domain> hosts, which the editor stack redirects to PROD (app) or no longer
+# serves (app-staging). A page already loaded from one still signs in and out with its
+# own origin, so they stay listed.
+APP_HOSTS = [
+    "https://app.open-reaction-database.org",
+    "https://app-staging.open-reaction-database.org",
+]
 
 # The live production login application. Imported from the existing Auth0 tenant;
 # protected so Pulumi will never delete or replace it.
@@ -39,8 +46,8 @@ ord_app = auth0.Client(
     "ord_app",
     name="ORD App",
     app_type="spa",
-    callbacks=[PROD, STAGING],
-    allowed_logout_urls=[PROD, STAGING],
+    callbacks=[PROD, STAGING, *APP_HOSTS],
+    allowed_logout_urls=[PROD, STAGING, *APP_HOSTS],
     # Public SPA: authorization_code + PKCE with refresh-token rotation. It has no
     # client_secret, so client_credentials doesn't apply (and Auth0 rejects it with
     # auth method "none"); implicit is legacy and unused by @auth0/auth0-react v2.

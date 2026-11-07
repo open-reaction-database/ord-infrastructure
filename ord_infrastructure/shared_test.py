@@ -15,9 +15,9 @@
 """Tests for the deploy-time guards in ord_infrastructure.shared.
 
 These cover the helpers that gate what ships to production — the sibling-repo
-cleanliness check, the image provenance stamp, and the ALB name-length guard — and,
-under Pulumi mocks (see conftest.py), what make_web_service passes to the image build
-and the task.
+cleanliness check, the image provenance stamp, and the ALB name-length and redirect
+guards — and, under Pulumi mocks (see conftest.py), what make_web_service passes to the
+image build, the task, and the load balancer.
 """
 
 import json
@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from typing import cast
 
 import pulumi
+import pulumi_aws as aws
 import pulumi_awsx as awsx
 import pytest
 
@@ -325,20 +326,102 @@ def test_make_web_service_gives_no_secrets_policy_without_secrets(
     return service.urn.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
 
 
-def test_make_web_service_rejects_too_long_name_prefix():
-    # The guard runs before any resource is constructed, so this needs no Pulumi
+@pulumi.runtime.test
+def test_make_web_service_redirects_no_host_by_default(
+    sibling, pulumi_mocks, constructed
+):
+    rules = constructed(aws.lb, "ListenerRule")
+    records = constructed(aws.route53, "Record")
+    _web_service(sibling)
+    ((rule, _),) = rules
+    assert len(records) == 1
+
+    def check(_: object) -> None:
+        inputs = pulumi_mocks.inputs_of("aws:lb/listenerRule:ListenerRule")
+        (condition,) = inputs["conditions"]
+        assert condition["hostHeader"]["values"] == ["app.example.com"]
+
+    return rule.urn.apply(check)
+
+
+@pulumi.runtime.test
+def test_make_web_service_redirects_a_host_to_its_own(
+    sibling, pulumi_mocks, constructed
+):
+    rules = constructed(aws.lb, "ListenerRule")
+    records = constructed(aws.route53, "Record")
+    _web_service(
+        sibling, redirect_host="old.example.com", redirect_listener_rule_priority=190
+    )
+    (_, (redirect_rule, redirect_rule_args)) = rules
+    ((alias, _), (_, redirect_alias_args)) = records
+    # The redirect waits for the service's own host to resolve, and the redirect host
+    # resolves only once the redirect answers it.
+    assert redirect_rule_args["opts"].depends_on == [alias]
+    assert redirect_alias_args["opts"].depends_on == [redirect_rule]
+
+    def check(_: object) -> None:
+        inputs = {
+            resource.name: resource.inputs
+            for resource in pulumi_mocks.resources
+            if resource.typ
+            in ("aws:lb/listenerRule:ListenerRule", "aws:route53/record:Record")
+        }
+        # The forward rule serves the redirect host until the redirect rule, which the
+        # listener evaluates first, exists.
+        forward = inputs["listener_rule"]
+        (condition,) = forward["conditions"]
+        assert condition["hostHeader"]["values"] == [
+            "app.example.com",
+            "old.example.com",
+        ]
+        redirect = inputs["redirect_listener_rule"]
+        assert redirect["priority"] < forward["priority"]
+        (condition,) = redirect["conditions"]
+        assert condition["hostHeader"]["values"] == ["old.example.com"]
+        (action,) = redirect["actions"]
+        assert action["type"] == "redirect"
+        assert action["redirect"] == {
+            "host": "app.example.com",
+            "statusCode": "HTTP_301",
+        }
+        assert inputs["alias"]["name"] == "app.example.com"
+        assert inputs["redirect_alias"]["name"] == "old.example.com"
+        assert inputs["redirect_alias"]["aliases"] == inputs["alias"]["aliases"]
+
+    registered = pulumi.Output.all(*(resource.urn for resource, _ in rules + records))
+    return registered.apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
+
+
+def _make_unbuilt_web_service(**kwargs) -> None:
+    """Call make_web_service with no backend or domain, for a guard that runs first."""
+    # The guards run before any resource is constructed, so this needs no Pulumi
     # runtime or mocks.
+    make_web_service(
+        backend=cast(pulumi.StackReference, None),
+        domain=cast(pulumi.StackReference, None),
+        container_port=8080,
+        record_name="test.example.com",
+        listener_rule_priority=100,
+        health_check_path="/",
+        sibling_path="../../../ord-app",
+        dockerfile="../../../ord-app/Dockerfile",
+        secret_arns=[],
+        log_retention_days=30,
+        **kwargs,
+    )
+
+
+def test_make_web_service_rejects_too_long_name_prefix():
     with pytest.raises(ValueError, match="too long"):
-        make_web_service(
-            backend=cast(pulumi.StackReference, None),
-            domain=cast(pulumi.StackReference, None),
-            container_port=8080,
-            record_name="test.example.com",
-            listener_rule_priority=100,
-            health_check_path="/",
-            sibling_path="../../../ord-app",
-            dockerfile="../../../ord-app/Dockerfile",
-            secret_arns=[],
-            log_retention_days=30,
-            name_prefix="x" * 30,
+        _make_unbuilt_web_service(name_prefix="x" * 30)
+
+
+@pytest.mark.parametrize("priority", [None, 100, 150])
+def test_make_web_service_rejects_a_redirect_the_forward_rule_outranks(priority):
+    with pytest.raises(
+        ValueError, match=r"needs a redirect_listener_rule_priority below .*\(100\)"
+    ):
+        _make_unbuilt_web_service(
+            redirect_host="old.example.com", redirect_listener_rule_priority=priority
         )

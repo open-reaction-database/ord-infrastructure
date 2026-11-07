@@ -16,8 +16,9 @@
 
 Per-environment knobs come from stack config; the defaults are the prod values, so
 the prod stack needs no config. The `staging` stack overrides them (see
-Pulumi.staging.yaml) to serve app-staging.open-reaction-database.org from prod's
-database, built from whatever branch is checked out.
+Pulumi.staging.yaml) to serve editor-staging.open-reaction-database.org from prod's
+database, built from whatever branch is checked out. Prod also redirects
+app.open-reaction-database.org to its own host.
 """
 
 import pulumi
@@ -29,7 +30,7 @@ from ord_infrastructure.log_queries import editor_queries, save_log_queries
 from ord_infrastructure.shared import make_web_service
 
 config = pulumi.Config()
-subdomain = config.get("subdomain") or "app"
+subdomain = config.get("subdomain") or "editor"
 database = config.get("database") or "app"
 # This environment's rule on the shared HTTPS listener; unique across services.
 listener_rule_priority = config.get_int("listener_rule_priority") or 200
@@ -39,7 +40,7 @@ if enforce_clean is None:
     enforce_clean = True
 # Prod's target group gets a generated name; other environments name theirs after the
 # subdomain.
-name_prefix = None if subdomain == "app" else subdomain
+name_prefix = None if subdomain == "editor" else subdomain
 # Fargate task size. A dataset validation holds one core for minutes at a time, so prod's
 # 2 vCPU keep a core free for requests. 4 GB is the least memory Fargate pairs with 2 vCPU.
 # ord-app streams downloads, and at this size it peaked at 1.9 GiB uploading a
@@ -91,6 +92,16 @@ download_link_secret_version = aws.secretsmanager.SecretVersion(
 
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
+# Published links to the editor name app.<domain>, so prod answers that host with a
+# permanent redirect to the same path and query on its own.
+redirect_host = (
+    domain_name.apply(lambda name: f"app.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
+    if subdomain == "editor"
+    else None
+)
+# The redirect's rule on the shared HTTPS listener: unique across services, and ahead
+# of the forward rule.
+REDIRECT_LISTENER_RULE_PRIORITY = 190
 
 # Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
 HEALTH_CHECK_PATH = "/api/v1/canonicalize-smiles?smiles=C"
@@ -133,9 +144,11 @@ service = make_web_service(
     name_prefix=name_prefix,
     cpu=cpu,
     memory=memory,
-    cluster_name=subdomain,  # "app" (prod) / "app-staging" — distinguishable in the console
+    cluster_name=subdomain,  # "editor" (prod) / "editor-staging" — distinguishable in the console
     # The task reads the key at startup, so it must have a value before the service starts.
     depends_on=[download_link_secret_version],
+    redirect_host=redirect_host,
+    redirect_listener_rule_priority=REDIRECT_LISTENER_RULE_PRIORITY,
 )
 
 # Counts of visits, new accounts, and API calls, read from the container's log in Logs

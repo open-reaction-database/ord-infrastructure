@@ -5,8 +5,8 @@ load balancer, ECR image, and DNS. It has two stacks:
 
 | Stack | URL | Database | Image source |
 |---|---|---|---|
-| `ord/prod` | `app.open-reaction-database.org` | `app` | sibling repo on clean `main` |
-| `ord/staging` | `app-staging.open-reaction-database.org` | `app` (prod's) | sibling repo, **any branch** |
+| `ord/prod` | `editor.open-reaction-database.org` | `app` | sibling repo on clean `main` |
+| `ord/staging` | `editor-staging.open-reaction-database.org` | `app` (prod's) | sibling repo, **any branch** |
 
 Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
 `subdomain`, `database`, `enforce_clean`, `listener_rule_priority`, `cpu`, and
@@ -14,11 +14,21 @@ Per-environment settings come from stack config (`Pulumi.<stack>.yaml`):
 `subdomain`, `enforce_clean`, and `listener_rule_priority`, and keeps prod's
 `database`, `cpu`, and `memory`.
 
+Each stack's ECS cluster is named after its subdomain (`editor`, `editor-staging`).
+Prod's target group has a generated name, and staging's is `editor-staging-tg`.
+
 The Auth0 tenant domain and the ORD App client ID come from the
 [`auth` stack](../auth/README.md), which owns that client. The image build receives
 them as build arguments, which the UI compiles into its bundle, and the task receives
 them as environment for the backend's token checks. A checkout of ord-app therefore
 needs no `.env` files to build a working image.
+
+## Redirect from app.open-reaction-database.org
+
+Prod answers `app.open-reaction-database.org` with a permanent (301) redirect to the
+same path and query on `editor.open-reaction-database.org`: a rule on the shared
+listener at priority 190, ahead of the editor's own rule at 200, and a Route 53 alias
+named `redirect_alias`. Staging redirects no host.
 
 ## Database connection
 
@@ -70,7 +80,7 @@ The **Deploy the editor** workflow also brings staging up or updates it: choose 
 [Deploying from GitHub Actions](../../README.md#from-github-actions)). Tearing staging
 down stays a terminal step.
 
-Auth0 already lists `app-staging.open-reaction-database.org` as an allowed
+Auth0 already lists `editor-staging.open-reaction-database.org` as an allowed
 callback/logout URL (see `stacks/auth`), so login works against staging without
 further changes. Staging uses prod's `app` database, so it reads and writes prod's
 data. A branch that adds an Alembic migration needs that migration applied to `app`

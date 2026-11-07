@@ -14,6 +14,7 @@
 
 """Pulumi mocks shared by the tests that build resources."""
 
+from collections.abc import Callable
 from typing import ClassVar
 
 import pulumi
@@ -97,6 +98,31 @@ class RecordingMocks(pulumi.runtime.Mocks):
         """Return the inputs of the one resource of type `typ`."""
         (resource,) = [r for r in self.resources if r.typ == typ]
         return resource.inputs
+
+
+@pytest.fixture
+def constructed(monkeypatch) -> Callable[[object, str], list[tuple[object, dict]]]:
+    """Returns a function that records each resource a class constructs from then on.
+
+    The function takes a module and the name of a resource class in it, and returns a
+    list that fills with each resource of that class and the keyword arguments it was
+    made with. A resource that waits on another registers only after it, so a test
+    checks a late resource through that resource's own URN.
+    """
+
+    def record(module: object, name: str) -> list[tuple[object, dict]]:
+        created = []
+        cls = getattr(module, name)
+
+        def construct(*args: object, **kwargs: object) -> object:
+            resource = cls(*args, **kwargs)
+            created.append((resource, kwargs))
+            return resource
+
+        monkeypatch.setattr(module, name, construct)
+        return created
+
+    return record
 
 
 @pytest.fixture

@@ -14,7 +14,7 @@
 
 config:
   aws:region: us-east-1
-  editor:subdomain: app-staging
+  editor:subdomain: editor-staging
   # No editor:database, editor:cpu, or editor:memory, so staging uses prod's `app`
   # database and prod's task size: a build runs against prod's data and accounts, at
   # prod's size.
