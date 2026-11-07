@@ -39,8 +39,8 @@ before that.
 ## Visit counts
 
 The stack saves Logs Insights queries over the container's log, in CloudWatch under
-**Logs Insights → Saved queries**, in a folder named for its subdomain (`app` for
-prod), defined in [`ord_infrastructure/log_queries.py`](../../ord_infrastructure/log_queries.py):
+**Logs Insights → Saved queries → editor** (`editor-staging` for the staging stack),
+defined in [`ord_infrastructure/log_queries.py`](../../ord_infrastructure/log_queries.py):
 
 | Query | Counts |
 |---|---|

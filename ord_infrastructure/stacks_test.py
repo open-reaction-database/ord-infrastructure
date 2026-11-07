@@ -170,7 +170,7 @@ def test_service_stacks_keep_container_logs_for_90_days(
 @pytest.mark.parametrize(
     ("pulumi_mocks", "folder", "queries"),
     [
-        ("editor", "app", log_queries.EDITOR_QUERIES),
+        ("editor", "editor", log_queries.EDITOR_QUERIES),
         ("viewer", "viewer", log_queries.VIEWER_QUERIES),
     ],
     indirect=["pulumi_mocks"],

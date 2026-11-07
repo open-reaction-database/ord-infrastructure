@@ -137,5 +137,8 @@ service = make_web_service(
 )
 
 # Counts of visits, new accounts, and API calls, read from the container's log in Logs
-# Insights, saved under the stack's subdomain so staging's stay apart from production's.
-log_queries = save_log_queries(service, subdomain, EDITOR_QUERIES)
+# Insights. Saved under editor/ for prod, and apart from it for any other stack.
+stack = pulumi.get_stack()
+log_queries = save_log_queries(
+    service, "editor" if stack == "prod" else f"editor-{stack}", EDITOR_QUERIES
+)
