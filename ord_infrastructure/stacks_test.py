@@ -173,9 +173,7 @@ def test_service_stacks_keep_container_logs_for_90_days(
         (
             "editor",
             "editor",
-            lambda program: log_queries.editor_queries(
-                program["HEALTH_CHECK_PATH"], program["EARLIER_HEALTH_CHECK_PATH"]
-            ),
+            lambda program: log_queries.editor_queries(program["HEALTH_CHECK_PATH"]),
         ),
         ("viewer", "viewer", lambda _: log_queries.VIEWER_QUERIES),
     ],

@@ -131,7 +131,6 @@ def test_editor_request_reads_a_uvicorn_line():
 
 
 def test_editor_request_keeps_the_query_string_apart():
-    # The load balancer's health check, which the API calls query leaves out.
     line = 'INFO:     10.0.97.138:0 - "GET /api/v1/canonicalize-smiles?smiles=C HTTP/1.0" 200 OK'
     match = pattern(log_queries.EDITOR_REQUEST).match(line)
     assert match is not None
@@ -139,12 +138,9 @@ def test_editor_request_keeps_the_query_string_apart():
     assert match["path"] == "/api/v1/canonicalize-smiles"
 
 
-def test_editor_api_calls_leave_out_each_health_check_path():
-    query = log_queries.editor_queries("/api/v1/x?y=1", "/api/v1/z")["API calls"]
-    assert (
-        '| filter ispresent(method) and concat(path, query) != "/api/v1/x?y=1"'
-        ' and concat(path, query) != "/api/v1/z"\n'
-    ) in query
+def test_editor_api_calls_leave_out_the_health_check():
+    query = log_queries.editor_queries("/api/v1/x?y=1")["API calls"]
+    assert 'concat(path, query) != "/api/v1/x?y=1"' in query
 
 
 @pytest.mark.parametrize(

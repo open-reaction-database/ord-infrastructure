@@ -95,9 +95,6 @@ record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignor
 # Answered by uvicorn through nginx, with no login or database; neither writes it to its
 # access log.
 HEALTH_CHECK_PATH = "/api/v1/health"
-# The health check's earlier path, whose lines the container's log holds for
-# log_retention_days; the saved queries leave out both.
-EARLIER_HEALTH_CHECK_PATH = "/api/v1/canonicalize-smiles?smiles=C"
 
 service = make_web_service(
     backend=backend,
@@ -148,5 +145,5 @@ stack = pulumi.get_stack()
 log_queries = save_log_queries(
     service,
     "editor" if stack == "prod" else f"editor-{stack}",
-    editor_queries(HEALTH_CHECK_PATH, EARLIER_HEALTH_CHECK_PATH),
+    editor_queries(HEALTH_CHECK_PATH),
 )
