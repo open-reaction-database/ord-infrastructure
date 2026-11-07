@@ -103,8 +103,9 @@ redirect_host = (
 # of the forward rule.
 REDIRECT_LISTENER_RULE_PRIORITY = 190
 
-# Served by uvicorn through nginx's /api/v1/ proxy, with no login or database.
-HEALTH_CHECK_PATH = "/api/v1/canonicalize-smiles?smiles=C"
+# Answered by uvicorn through nginx, with no login or database; neither writes it to its
+# access log.
+HEALTH_CHECK_PATH = "/api/v1/health"
 
 service = make_web_service(
     backend=backend,

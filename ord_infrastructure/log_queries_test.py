@@ -131,7 +131,6 @@ def test_editor_request_reads_a_uvicorn_line():
 
 
 def test_editor_request_keeps_the_query_string_apart():
-    # The load balancer's health check, which the API calls query leaves out.
     line = 'INFO:     10.0.97.138:0 - "GET /api/v1/canonicalize-smiles?smiles=C HTTP/1.0" 200 OK'
     match = pattern(log_queries.EDITOR_REQUEST).match(line)
     assert match is not None
