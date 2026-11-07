@@ -36,6 +36,20 @@ the secret when a task starts, so a replaced key reaches the service only as its
 restart, for example on the next deploy; it invalidates links made in the 30 seconds
 before that.
 
+## Visit counts
+
+The stack saves Logs Insights queries over the container's log, in CloudWatch under
+**Logs Insights → Saved queries → editor** (`editor-staging` for the staging stack),
+defined in [`ord_infrastructure/log_queries.py`](../../ord_infrastructure/log_queries.py):
+
+| Query | Counts |
+|---|---|
+| Visits and new accounts per day | Sign-ins to the editor (`POST /api/v1/auth/jit-provisioning`, which each load of the app makes once signed in), and accounts created. |
+| API calls | Calls to the API, by method and route with its IDs left out, and by whether they succeeded. |
+
+Each reads uvicorn's access lines and the backend's log, so it covers the log's 90 days
+at most.
+
 ## Staging: bring it up / tear it down
 
 Staging is meant to be ephemeral — stand it up to test a change, destroy it when

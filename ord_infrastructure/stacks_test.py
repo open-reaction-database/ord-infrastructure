@@ -27,7 +27,7 @@ import pulumi_awsx as awsx
 import pytest
 import yaml
 
-from ord_infrastructure import pins, shared
+from ord_infrastructure import log_queries, pins, shared
 
 STACKS = pathlib.Path(__file__).parent.parent / "stacks"
 WORKFLOWS = pathlib.Path(__file__).parent.parent / ".github" / "workflows"
@@ -165,6 +165,43 @@ def test_service_stacks_keep_container_logs_for_90_days(
 
     ((service, _),) = services
     return service.urn.apply(check)
+
+
+@pytest.mark.parametrize(
+    ("pulumi_mocks", "folder", "queries_of"),
+    [
+        (
+            "editor",
+            "editor",
+            lambda program: log_queries.editor_queries(program["HEALTH_CHECK_PATH"]),
+        ),
+        ("viewer", "viewer", lambda _: log_queries.VIEWER_QUERIES),
+    ],
+    indirect=["pulumi_mocks"],
+)
+@pulumi.runtime.test
+def test_service_stacks_save_their_log_queries(
+    pulumi_mocks, monkeypatch, folder, queries_of
+):
+    # The clean-main gate would inspect the developer's ord-app checkout.
+    monkeypatch.setenv("PULUMI_ALLOW_DIRTY", "1")
+    pulumi.runtime.set_all_config({})
+    monkeypatch.chdir(STACKS / pulumi.get_project())
+    program = runpy.run_path("__main__.py")
+    saved = program["log_queries"]
+    queries = queries_of(program)
+
+    def check(_: object) -> None:
+        inputs = [
+            resource.inputs
+            for resource in pulumi_mocks.resources
+            if resource.typ == "aws:cloudwatch/queryDefinition:QueryDefinition"
+        ]
+        assert {query["name"]: query["queryString"] for query in inputs} == {
+            f"{folder}/{title}": query for title, query in queries.items()
+        }
+
+    return pulumi.Output.all(*(query.urn for query in saved)).apply(check)  # ty: ignore[missing-argument, invalid-argument-type]
 
 
 def _run_viewer_stack(monkeypatch, config: dict[str, str] | None = None) -> None:

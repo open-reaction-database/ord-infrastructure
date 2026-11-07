@@ -23,6 +23,7 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
 
+from ord_infrastructure.log_queries import VIEWER_QUERIES, save_log_queries
 from ord_infrastructure.shared import make_web_service
 
 # The corpus the viewer serves, as commits so every task fetches the same one. The
@@ -102,7 +103,7 @@ environment = {
     "ORD_VIEWER_MEMORY_LIMIT": f"{MEMORY - RESERVED_MEMORY}MiB",
 }
 
-make_web_service(
+service = make_web_service(
     backend=backend,
     domain=domain,
     container_port=8080,
@@ -126,3 +127,6 @@ make_web_service(
     health_check_grace_period_seconds=HEALTH_CHECK_GRACE_PERIOD_SECONDS,
     ephemeral_storage_gib=EPHEMERAL_STORAGE_GIB,
 )
+
+# Counts of visits and API calls, read from the container's log in Logs Insights.
+log_queries = save_log_queries(service, "viewer", VIEWER_QUERIES)
