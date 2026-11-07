@@ -151,10 +151,10 @@ def _editor_load_balancer_inputs(
     """Run the editor's stack program and collect what it gives the load balancer.
 
     Args:
-        pulumi_mocks: The recording mocks.
-        monkeypatch: The test's monkeypatch fixture.
-        constructed: The constructed fixture.
-        config: The stack's config.
+        pulumi_mocks: The recording mocks, which hold each resource's inputs.
+        monkeypatch: The test's monkeypatch fixture, for the working directory.
+        constructed: The fixture that records the rules and records as they are made.
+        config: The stack's config, as fully-qualified keys and string values.
 
     Returns:
         An output that resolves once every rule and record has registered, and a

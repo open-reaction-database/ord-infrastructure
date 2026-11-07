@@ -92,7 +92,7 @@ download_link_secret_version = aws.secretsmanager.SecretVersion(
 
 domain_name = domain.get_output("domain_name")
 record_name = domain_name.apply(lambda name: f"{subdomain}.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
-# Published links to the editor name app.<domain>, so prod answers that host with a
+# Published links name the editor at app.<domain>, so prod answers that host with a
 # permanent redirect to the same path and query on its own.
 redirect_host = (
     domain_name.apply(lambda name: f"app.{name}")  # ty: ignore[missing-argument, invalid-argument-type]
